@@ -1522,7 +1522,22 @@ int Markdown::Private::processLink(const std::string_view data,size_t offset)
     else
     {
       out+="<img src=\"";
+      if (Portable::isAbsolutePath(link) || isURL(link))
+      {
       out+=link;
+      }
+      else
+      {
+        // lets see if the file exists based on the path of the input file and the image file name (is a relative path / local filename)
+        FileInfo fi(fileName.str());
+        QCString imgFile = fileName.left(fileName.length() - fi.fileName().length()) + link;
+        FileInfo fimg(imgFile.str());
+        if (fimg.exists() && fimg.isReadable())
+        {
+          link = imgFile.right(fimg.fileName().length());
+        }
+        out+=link;
+      }
       out+="\" alt=\"";
       out+=content;
       out+="\"";
@@ -3441,7 +3456,6 @@ QCString Markdown::Private::processBlocks(std::string_view data,const size_t ind
 
   return out;
 }
-
 
 static ExplicitPageResult isExplicitPage(const QCString &docs)
 {
