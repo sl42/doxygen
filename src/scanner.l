@@ -60,6 +60,29 @@ typedef yyguts_t *yyscan_t;
 #define YY_NO_INPUT 1
 #define YY_NO_UNISTD_H 1
 
+/// There are three locations where the '`@deprecated`' has to be appended:
+/// @li '`<SkipC11Attribute>"]]"`' (the default case)
+/// @li '`<FindMembers>[;,]`'      (for a list of multiple member attributes / global attributes of one type)
+/// @lu '`<UsingAlias>";"`'        (for deprecated 'using' statements / alias definitions)
+struct C11DeprecatedAttribute
+{
+  bool          mUsedInUsingStmnt = false;
+  bool          mFoundAttribute = false;
+  QCString      mAttrComment;
+  bool          mAppliedAfterAttrClose = false;
+  unsigned int  mAppliedToMembersCount = 0;
+  yy_state_type mLastAttributeContext = 0;
+  yy_state_type mLastDeprecatedAttributeContext = 0;
+
+  void Reset();
+  /// @param differentEntryToFill
+  ///        @li '`nullptr`' means that '`yyextra->current`' is used (== default case)
+  ///        @li '`yyextra->previous`' is used within '`<UsingAlias>";"`'
+  /// @see '`void handleCommentBlock(yyscan_t yyscanner,const QCString &doc,bool brief,std::shared_ptr<Entry> *differentEntryToFill = nullptr)`'
+  void AddDeprecatedInfo(yyscan_t yyscanner, yy_state_type currState, std::shared_ptr<Entry> *differentEntryToFill = nullptr);
+};
+
+
 struct scannerYY_state
 {
   OutlineParserInterface *thisParser;
@@ -72,6 +95,7 @@ struct scannerYY_state
   int              lastCPPContext = 0;
   int              lastSkipSharpContext = 0;
   int              lastSkipRoundContext = 0;
+  int              lastCStringContentContext = 0;
   int              lastStringContext = 0;
   int              lastDeprecatedContext = 0;
   int              lastCurlyContext = 0;
@@ -90,7 +114,7 @@ struct scannerYY_state
   int              lastHereDocContext = 0;
   int              lastDefineContext = 0;
   int              lastAlignAsContext = 0;
-  int              lastC11AttributeContext = 0;
+  C11DeprecatedAttribute deprecatedAttrInfo;
   int              lastModifierContext = 0;
   Protection       protection = Protection::Public;
   Protection       baseProt = Protection::Public;
@@ -156,6 +180,7 @@ struct scannerYY_state
   ArgumentList    *currentArgumentList = nullptr;
   char             lastCopyArgChar = '\0';
 
+  QCString *pCopyCStringContent = nullptr;
   QCString *pCopyQuotedString = nullptr;
   QCString *pCopyRoundString = nullptr;
   QCString *pCopyCurlyString = nullptr;
@@ -236,7 +261,7 @@ static void addType(yyscan_t yyscanner);
 static void setContext(yyscan_t yyscanner);
 static void prependScope(yyscan_t yyscanner);
 static void startCommentBlock(yyscan_t yyscanner,bool);
-static void handleCommentBlock(yyscan_t yyscanner,const QCString &doc,bool brief);
+static void handleCommentBlock(yyscan_t yyscanner,const QCString &doc,bool brief,std::shared_ptr<Entry> *differentEntryToFill = nullptr);
 static void handleParametersCommentBlocks(yyscan_t yyscanner,ArgumentList &al);
 static bool checkForKnRstyleC(yyscan_t yyscanner);
 static void splitKnRArg(yyscan_t yyscanner,QCString &oldStyleArgPtr,QCString &oldStyleArgName);
@@ -366,6 +391,7 @@ NONLopt [^\n]*
 %x      SkipInits
 %x      SkipC11Inits
 %x      SkipC11Attribute
+%x      C11AttrDeprecatedComment
 %x      SkipCPP
 %x      SkipComment
 %x      SkipCxxComment
@@ -422,6 +448,7 @@ NONLopt [^\n]*
 %x      IDLUnionCase
 %x      NSAliasName
 %x      NSAliasArg
+%x      CopyCStringContent
 %x      CopyString
 %x      CopyPHPString
 %x      CopyGString
@@ -919,6 +946,7 @@ NONLopt [^\n]*
                                           }
                                           yyextra->current->args = argListToString(yyextra->current->argList);
                                           //printf("argList=%s\n",qPrint(yyextra->current->args));
+                                          yyextra->deprecatedAttrInfo.Reset();
                                           unput(';');
                                           BEGIN( SFunction );
                                         }
@@ -1092,6 +1120,7 @@ NONLopt [^\n]*
                                           std::shared_ptr<Entry> tmp = yyextra->current;
                                           yyextra->current_root->moveToSubEntryAndRefresh(yyextra->current);
                                           yyextra->current_root = std::move(tmp);
+                                          yyextra->deprecatedAttrInfo.Reset();
                                           initEntry(yyscanner);
                                           BEGIN(FindMembers);
                                         }
@@ -1863,6 +1892,7 @@ NONLopt [^\n]*
                                           BEGIN( FindMembers ) ;
                                         }
 <Operator>";"                           { // can occur when importing members
+                                          yyextra->deprecatedAttrInfo.Reset();
                                           unput(';');
                                           BEGIN( FindMembers ) ;
                                         }
@@ -1914,6 +1944,7 @@ NONLopt [^\n]*
                                           }
                                         }
 <NSAliasArg>";"                         {
+                                          yyextra->deprecatedAttrInfo.Reset();
                                           BEGIN( FindMembers );
                                         }
 <PHPUse>({ID}{BN}*"\\"{BN}*)*{ID}/{BN}+"as"  {
@@ -2024,12 +2055,16 @@ NONLopt [^\n]*
                                         }
 <FindMembers>"using"{BN}+/("::"{ID}("::"{ID})*)? {
                                           if (yyextra->insideJava) REJECT;
+                                          yyextra->deprecatedAttrInfo.mUsedInUsingStmnt = true;
                                           yyextra->current->startLine=yyextra->yyLineNr;
                                           yyextra->current->startColumn = yyextra->yyColNr;
                                           lineCount(yyscanner);
                                           BEGIN(Using);
                                         }
-<Using>"namespace"{BN}+                 { lineCount(yyscanner); BEGIN(UsingDirective); }
+<Using>"namespace"{BN}+                 {
+                                          lineCount(yyscanner);
+                                          BEGIN(UsingDirective);
+                                        }
 <Using>("::")?({ID}{BN}*("::"|"."){BN}*)*({ID}|{OPERATOR}|{FUNCOP}) {
                                           lineCount(yyscanner);
                                           yyextra->current->name=yytext;
@@ -2076,6 +2111,8 @@ NONLopt [^\n]*
                                           yyextra->current->spec.setAlias(true);
                                           yyextra->current_root->moveToSubEntryAndRefresh(yyextra->current);
                                           initEntry(yyscanner);
+                                          yyextra->deprecatedAttrInfo.AddDeprecatedInfo(yyscanner, YY_START, &yyextra->previous);
+                                          yyextra->deprecatedAttrInfo.Reset();
                                           BEGIN(FindMembers);
                                         }
 <UsingAlias>.                           {
@@ -2092,7 +2129,9 @@ NONLopt [^\n]*
                                           initEntry(yyscanner);
                                           BEGIN(Using);
                                         }
-<Using>";"                              { BEGIN(FindMembers); }
+<Using>";"                              {
+                                          BEGIN(FindMembers);
+                                        }
 <FindMembers>{SCOPENAME}{BN}*"<>"       { // guided template decl
                                           QCString n=yytext;
                                           addType(yyscanner);
@@ -3320,6 +3359,22 @@ NONLopt [^\n]*
                                           *yyextra->pCopyQuotedString+=*yytext;
                                         }
 
+  /* generic copying of a C string content (without the terminating quote sign) */
+
+<CopyCStringContent>\\.                 {
+                                          *yyextra->pCopyCStringContent+=yytext;
+                                        }
+<CopyCStringContent>\"                  {
+                                          BEGIN(yyextra->lastCStringContentContext);
+                                        }
+<CopyCStringContent>"[\r\n]"            { // newline characters before the terminating quote are a syntax error
+                                          //printf("error: Found a line break before the char string was closed with a quote at line %d of %s\n",yyextra->yyLineNr,yyextra->fileName);
+                                          BEGIN( yyextra->lastCStringContentContext );
+                                        }
+<CopyCStringContent>.                   {
+                                          *yyextra->pCopyCStringContent+=yytext;
+                                        }
+
   /* generic quoted growable string copy rules */
 <CopyGString,CopyPHPGString>\\.         {
                                           *yyextra->pCopyQuotedGString << yytext;
@@ -3725,6 +3780,7 @@ NONLopt [^\n]*
                                           yyextra->current->args+=' ';
                                         }
 <FindMembers>[;,]                       {
+                                          yyextra->deprecatedAttrInfo.AddDeprecatedInfo(yyscanner, YY_START);
                                           QCString oldType = yyextra->current->type;
                                           if (yyextra->current->bodyLine==-1)
                                           {
@@ -3789,6 +3845,7 @@ NONLopt [^\n]*
                                             yyextra->current->bodyColumn = 1;
                                             yyextra->current->groups.clear();
                                             initEntry(yyscanner);
+                                            yyextra->deprecatedAttrInfo.Reset();
                                           }
                                         }
 
@@ -4422,6 +4479,7 @@ NONLopt [^\n]*
                                           yyextra->memspecEntry = yyextra->current;
                                           yyextra->current_root->moveToSubEntryAndRefresh( yyextra->current ) ;
                                           initEntry(yyscanner);
+                                          yyextra->deprecatedAttrInfo.Reset();
                                           unput(';');
                                           BEGIN( MemberSpec ) ;
                                         }
@@ -4672,6 +4730,7 @@ NONLopt [^\n]*
 <EndFuncPtr>")"{BNopt}/";"              { // a variable with extra braces
                                           lineCount(yyscanner);
                                           yyextra->current->type+=yyextra->funcPtrType.mid(1);
+                                          yyextra->deprecatedAttrInfo.Reset();
                                           BEGIN(FindMembers);
                                         }
 <EndFuncPtr>")"{BNopt}/"("              { // a function pointer
@@ -5630,7 +5689,8 @@ NONLopt [^\n]*
                                           }
                                         }
 <SkipC11Attribute>"]]"                 {
-                                          BEGIN(yyextra->lastC11AttributeContext);
+                                          yyextra->deprecatedAttrInfo.AddDeprecatedInfo(yyscanner, YY_START);
+                                          BEGIN(yyextra->deprecatedAttrInfo.mLastAttributeContext);
                                         }
 <SkipInits>"{"                          { // C++11 style initializer
                                           unput('{');
@@ -5727,7 +5787,7 @@ NONLopt [^\n]*
                                           //addToBody(yytext);
                                           BEGIN( SkipCurlyCpp );
                                         }
-<SkipCurly,SkipC11Inits,SkipInits,SkipC11Attribute>\n   {
+<SkipCurly,SkipC11Inits,SkipInits,SkipC11Attribute,C11AttrDeprecatedComment>\n   {
                                           lineCount(yyscanner);
                                           //addToBody(yytext);
                                         }
@@ -5765,12 +5825,12 @@ NONLopt [^\n]*
                                           //addToBody(yytext);
                                           lineCount(yyscanner);
                                         }
-<SkipInits,SkipC11Inits,SkipCurly,SkipCurlyCpp,SkipC11Attribute>{CCS}    {
+<SkipInits,SkipC11Inits,SkipCurly,SkipCurlyCpp,SkipC11Attribute,C11AttrDeprecatedComment>{CCS}    {
                                           //addToBody(yytext);
                                           yyextra->lastCContext = YY_START;
                                           BEGIN(SkipComment);
                                         }
-<SkipInits,SkipC11Inits,SkipCurly,SkipCurlyCpp,SkipC11Attribute>{CPPC}  {
+<SkipInits,SkipC11Inits,SkipCurly,SkipCurlyCpp,SkipC11Attribute,C11AttrDeprecatedComment>{CPPC}  {
                                           //addToBody(yytext);
                                           yyextra->lastCContext = YY_START;
                                           BEGIN(SkipCxxComment);
@@ -5779,6 +5839,24 @@ NONLopt [^\n]*
                                           yyextra->roundCount=0;
                                           yyextra->lastSkipRoundContext=YY_START;
                                           BEGIN(SkipRound);
+                                        }
+<SkipC11Attribute>"deprecated"          { // the following combinations are now possible: 'deprecated]]', 'deprecated,...', 'deprecated("<...comment...>")'
+                                          // only the comment string here ('"<...comment...>"') is of interest if there is any
+                                          yyextra->deprecatedAttrInfo.mLastDeprecatedAttributeContext = YY_START;
+                                          yyextra->deprecatedAttrInfo.mFoundAttribute = true;
+                                          BEGIN( C11AttrDeprecatedComment );
+                                        }
+<C11AttrDeprecatedComment>\"            { // the interesting comment for the documentation
+                                          yyextra->pCopyCStringContent=&(yyextra->deprecatedAttrInfo.mAttrComment);
+                                          yyextra->lastCStringContentContext=YY_START;
+                                          BEGIN(CopyCStringContent);
+                                        }
+<C11AttrDeprecatedComment>"[,)]"        { // the end of the 'deprecated' attribute data has been reached or there was no comment string
+                                          BEGIN(yyextra->deprecatedAttrInfo.mLastDeprecatedAttributeContext);
+                                        }
+<C11AttrDeprecatedComment>"\]"          {
+                                          unput(*yytext);
+                                          BEGIN(yyextra->deprecatedAttrInfo.mLastDeprecatedAttributeContext);
                                         }
 <SkipInits,SkipC11Inits,SkipC11Attribute>\"             {
                                           yyextra->lastStringContext=YY_START;
@@ -5823,7 +5901,7 @@ NONLopt [^\n]*
                                             yyextra->current->spec.setNoDiscard(true);
                                           }
                                         }
-<SkipInits,SkipC11Inits,SkipCurly,SkipCurlyCpp,SkipC11Attribute>.       { }
+<SkipInits,SkipC11Inits,SkipCurly,SkipCurlyCpp,SkipC11Attribute,C11AttrDeprecatedComment>.       { }
 <SkipString,SkipPHPString>\\.           { }
 <SkipString>\"                          {
                                           BEGIN( yyextra->lastStringContext );
@@ -6700,7 +6778,7 @@ NONLopt [^\n]*
                                         }
 <Comment>.                              { yyextra->current->program << *yytext ; }
 
-<FindMembers,FindFields,MemberSpec,FuncQual,SkipCurly,Operator,ClassVar,SkipInits,SkipC11Inits,SkipC11Attribute,Bases,OldStyleArgs>({CPPC}{B}*)?{CCS}"!" {
+<FindMembers,FindFields,MemberSpec,FuncQual,SkipCurly,Operator,ClassVar,SkipInits,SkipC11Inits,SkipC11Attribute,C11AttrDeprecatedComment,Bases,OldStyleArgs>({CPPC}{B}*)?{CCS}"!" {
                                           //printf("Start doc block at %d\n",yyextra->yyLineNr);
                                           if (!yyextra->current->doc.isEmpty())
                                           {
@@ -7421,7 +7499,8 @@ NONLopt [^\n]*
 <*>"[["                                 { // C++11 attribute
                                           if (!yyextra->insideCpp) REJECT;
                                           if (YY_START == CopyGString || YY_START == CopyGString) REJECT;
-                                          yyextra->lastC11AttributeContext = YY_START;
+                                          yyextra->deprecatedAttrInfo.Reset();
+                                          yyextra->deprecatedAttrInfo.mLastAttributeContext = YY_START;
                                           BEGIN( SkipC11Attribute );
                                         }
 
@@ -7515,6 +7594,70 @@ static int yyread(yyscan_t yyscanner,char *buf,int max_size)
     c++; buf++;
   }
   return c;
+}
+
+//---------------------------------------------------------------------------
+
+void C11DeprecatedAttribute::Reset()
+{
+  (*this) = C11DeprecatedAttribute();
+}
+
+void C11DeprecatedAttribute::AddDeprecatedInfo(yyscan_t yyscanner, yy_state_type currState, std::shared_ptr<Entry> *differentEntryToFill)
+{
+  struct yyguts_t *yyg = (struct yyguts_t*)yyscanner;
+
+  if (mAppliedAfterAttrClose && (mAppliedToMembersCount == 0) && (currState == FindMembers))
+  {
+    ++mAppliedToMembersCount;
+    return;
+  }
+
+  // If the current end of the '<SkipC11Attribute>"]]"' is part of a 'using' statement,
+  // the 'deprecated' stuff must be added only within the rule '<UsingAlias>";"'.
+  // Otherwise it is appended to the function / attributes which follows the 'using statement.
+  if (!mFoundAttribute || ((currState == SkipC11Attribute) && (mLastAttributeContext == Using)))
+  {
+    return;
+  }
+
+  QCString commentToAdd;
+  if (mAttrComment.isEmpty())
+  {
+    // add an uncommented '@deprecated' statement only if there is not yet already one
+    const QCString toSearch(yyextra->docBlock.str());
+    if ((currState == FindMembers) || (!toSearch.contains("@deprecated") && !toSearch.contains("\\deprecated")))
+    {
+      commentToAdd = " \\ilinebr \\ilinebr @deprecated \\ilinebr \\ilinebr ";
+    }
+  }
+  else
+  {
+    commentToAdd = " \\ilinebr \\ilinebr @deprecated " +
+                   mAttrComment +
+                   " \\ilinebr \\ilinebr ";
+  }
+  if (!commentToAdd.isEmpty())
+  {
+    // Only the additional comment is added (== appended) via 'handleCommentBlock()'.
+    // This is to avoid appending the already existing comment within 'yyextra->docBlock'
+    // a second time (looks really nasty). 'yyextra->docBlock' is also updated to keep
+    // the comment and the already handled data within 'yyscanner as consistent' as possible.
+    yyextra->docBlock << commentToAdd;
+    handleCommentBlock(yyscanner, commentToAdd, FALSE, differentEntryToFill);
+
+    switch (currState)
+    {
+      case SkipC11Attribute:
+        mAppliedAfterAttrClose = true;
+        break;
+      case FindMembers:
+        ++mAppliedToMembersCount;
+        break;
+      default:
+       break;
+    }
+  }
 }
 
 
@@ -7973,16 +8116,18 @@ static void newEntry(yyscan_t yyscanner)
   initEntry(yyscanner);
 }
 
-static void handleCommentBlock(yyscan_t yyscanner,const QCString &doc,bool brief)
+/// param differentEntryToFill If '`nullptr`', '`yyextra->current`' is used (== default case)
+static void handleCommentBlock(yyscan_t yyscanner,const QCString &doc,bool brief, std::shared_ptr<Entry> *differentEntryToFill)
 {
   struct yyguts_t *yyg = (struct yyguts_t*)yyscanner;
   AUTO_TRACE("doc='{}' is_brief={}",Trace::trunc(doc),brief);
+  std::shared_ptr<Entry> &toFill = (differentEntryToFill ? *differentEntryToFill : yyextra->current);
   bool hideInBodyDocs = Config_getBool(HIDE_IN_BODY_DOCS);
   if (yyextra->docBlockInBody && hideInBodyDocs) return;
-  int lineNr = brief ? yyextra->current->briefLine : yyextra->current->docLine;   // line of block start
+  int lineNr = brief ? toFill->briefLine : toFill->docLine;   // line of block start
 
   // fill in inbodyFile && inbodyLine the first time, see bug 633891
-  std::shared_ptr<Entry> docEntry = yyextra->docBlockInBody && yyextra->previous ? yyextra->previous : yyextra->current;
+  std::shared_ptr<Entry> docEntry = yyextra->docBlockInBody && yyextra->previous ? yyextra->previous : toFill;
   if (yyextra->docBlockInBody && docEntry && docEntry->inbodyLine==-1)
   {
     docEntry->inbodyFile = yyextra->fileName;
@@ -7997,7 +8142,7 @@ static void handleCommentBlock(yyscan_t yyscanner,const QCString &doc,bool brief
   QCString processedDoc = Config_getBool(MARKDOWN_SUPPORT) ? markdown.process(strippedDoc,lineNr) : strippedDoc;
   while (yyextra->commentScanner.parseCommentBlock(
         yyextra->thisParser,
-        yyextra->docBlockInBody && yyextra->previous ? yyextra->previous.get() : yyextra->current.get(),
+        yyextra->docBlockInBody && yyextra->previous ? yyextra->previous.get() : toFill.get(),
         processedDoc, // text
         yyextra->fileName,   // file
         lineNr,       // line of block start
@@ -8015,10 +8160,10 @@ static void handleCommentBlock(yyscan_t yyscanner,const QCString &doc,bool brief
     //printf("parseCommentBlock position=%d [%s]\n",position,qPrint(doc)+position);
     if (needsEntry)
     {
-      QCString docFile = yyextra->current->docFile;
+      QCString docFile = toFill->docFile;
       newEntry(yyscanner);
-      yyextra->current->docFile = docFile;
-      yyextra->current->docLine = lineNr;
+      toFill->docFile = docFile;
+      toFill->docLine = lineNr;
     }
   }
   if (needsEntry)
