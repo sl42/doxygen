@@ -279,7 +279,7 @@ static const std::vector<HtmlEntityInfo> g_htmlEntities
   { SYM(emsp),     "\xe2\x80\x83", "&emsp;",     "<emsp/>",              "&#8195;",       "\\quad{}",               nullptr,  "{\\emspace}", { nullptr,      HtmlEntityMapper::Perl_unknown }},
   { SYM(thinsp),   "\xe2\x80\x89", "&thinsp;",   "<thinsp/>",            "&#8201;",       "\\,",                    nullptr,  "{\\qmspace}", { nullptr,      HtmlEntityMapper::Perl_unknown }},
   { SYM(zwnj),     "\xe2\x80\x8c", "&zwnj;",     "<zwnj/>",              "&#8204;",       "{}",                     nullptr,  "\\zwnj",      { nullptr,      HtmlEntityMapper::Perl_unknown }},
-  { SYM(zwj),      "\xe2\x80\x8d", "&zwj;",      "<zwj/>",               "&#8205;",       "",                       nullptr,  "\\zwj",       { nullptr,      HtmlEntityMapper::Perl_unknown }},
+  { SYM(zwj),      "\xe2\x80\x8d", "",           "<zwj/>",               "&#8205;",       "",                       nullptr,  "\\zwj",       { nullptr,      HtmlEntityMapper::Perl_unknown }},
   { SYM(lrm),      "\xe2\x80\x8e", "&lrm;",      "<lrm/>",               "&#8206;",       "",                       nullptr,  "\\ltrmark",   { nullptr,      HtmlEntityMapper::Perl_unknown }},
   { SYM(rlm),      "\xe2\x80\x8f", "&rlm;",      "<rlm/>",               "&#8207;",       "",                       nullptr,  "\\rtlmark",   { nullptr,      HtmlEntityMapper::Perl_unknown }},
   { SYM(ndash),    "\xe2\x80\x93", "&ndash;",    "<ndash/>",             "&#8211;",       "--",                     "--",     "\\'96",       { "-",          HtmlEntityMapper::Perl_char    }},

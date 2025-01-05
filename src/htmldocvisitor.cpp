@@ -2101,7 +2101,8 @@ void HtmlDocVisitor::filter(const QCString &str, const bool retainNewline)
       case '>':  m_t << "&gt;"; break;
       case '&':  m_t << "&amp;"; break;
       case '\\': if ((*p == '(') || (*p == ')'))
-          m_t << "\\&zwj;" << *p++;
+          m_t << "\\" // << "&zwj;" 
+              << *p++;
         else
           m_t << c;
         break;
@@ -2141,7 +2142,7 @@ QCString HtmlDocVisitor::filterQuotedCdataAttr(const QCString &str)
       case '\\':
         if ((*p == '(') || (*p == ')'))
         {
-          growBuf.addStr("\\&zwj;");
+          //growBuf.addStr("\\&zwj;");
           growBuf.addChar(*p++);
         }
         else

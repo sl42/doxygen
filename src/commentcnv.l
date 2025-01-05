@@ -1052,10 +1052,10 @@ SLASHopt [/]*
 				     BEGIN(Scan);
                                    }
 <ReadLine>{CCS}"*"                 {
-				     copyToOutput(yyscanner,"/&zwj;**");
+				     copyToOutput(yyscanner,"/**");
 				   }
 <ReadLine>{CCE}                    {
-				     copyToOutput(yyscanner,"*&zwj;/");
+				     copyToOutput(yyscanner,"*/");
 				   }
 <ReadLine,CopyLine>"*"             {
 				     copyToOutput(yyscanner,yytext,yyleng);

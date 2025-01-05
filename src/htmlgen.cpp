@@ -770,9 +770,17 @@ void HtmlCodeGenerator::codify(const QCString &str)
                      else if (*p=='>')
                      { *m_t << "&gt;"; p++; }
                      else if (*p=='(')
-                     { *m_t << "\\&zwj;("; m_col++;p++; }
+                     { *m_t << "\\" // << "&zwj;"
+                            << "("; 
+                       ++m_col;
+                       ++p; 
+                     }
                      else if (*p==')')
-                     { *m_t << "\\&zwj;)"; m_col++;p++; }
+                     { *m_t << "\\" // << "&zwj;"
+                            << ")";
+                       ++m_col;
+                       ++p; 
+                     }
                      else
                        *m_t << "\\";
                      m_col++;
@@ -1903,9 +1911,15 @@ void HtmlGenerator::docify_(const QCString &str,bool inHtmlComment)
                    else if (*p=='>')
                      { m_t << "&gt;"; p++; }
 		   else if (*p=='(')
-                     { m_t << "\\&zwj;("; p++; }
+                     { m_t << "\\" // << "&zwj;" 
+                           << "("; 
+                       p++; 
+                     }
                    else if (*p==')')
-                     { m_t << "\\&zwj;)"; p++; }
+                     { m_t << "\\" // << "&zwj;" 
+                           << ")"; 
+                       p++; 
+                     }
                    else
                      m_t << "\\";
                    break;
