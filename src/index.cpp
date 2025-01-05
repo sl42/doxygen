@@ -52,6 +52,8 @@
 #include "moduledef.h"
 #include "sitemap.h"
 
+#include <iostream>
+
 #define MAX_ITEMS_BEFORE_MULTIPAGE_INDEX 200
 #define MAX_ITEMS_BEFORE_QUICK_INDEX 30
 
@@ -2838,7 +2840,8 @@ void Index::addClassMemberNameToIndex(const MemberDef *md)
   bool hideFriendCompounds = Config_getBool(HIDE_FRIEND_COMPOUNDS);
   const ClassDef *cd=nullptr;
 
-  if (md->isLinkableInProject() &&
+  if (md &&
+      md->isLinkableInProject() &&
       (cd=md->getClassDef())    &&
       cd->isLinkableInProject() &&
       !cd->isImplicitTemplateInstance())
@@ -2892,6 +2895,22 @@ void Index::addClassMemberNameToIndex(const MemberDef *md)
         incrementDocumentedClassMembers(ClassMemberHighlight::Related,letter,md);
       }
     }
+    else
+    {
+      if (!n.data() && md)
+      {
+        std::cout << "FATAL ERROR: Empty 'n.data()' name: Definition located in '" 
+                  << md->getDefFileName() << "." << md->getDefFileExtension() 
+                  << "', line "           << md->getDefLine() 
+                  << ", column "          << md->getDefColumn()
+                  << ", start def line "  << md->getStartDefLine()
+                  << "; Declaration: '"   << md->getDeclFileName()
+                  << "', line "           << md->getDeclLine()
+                  << ", type "            << md->getDeclType()
+                  << std::endl;
+        ;
+      }
+    }
   }
 }
 
@@ -2899,6 +2918,11 @@ void Index::addClassMemberNameToIndex(const MemberDef *md)
 
 void Index::addNamespaceMemberNameToIndex(const MemberDef *md)
 {
+  if (!md)
+  {
+    return;
+  }
+  Index& index = Index::instance();
   const NamespaceDef *nd=md->getNamespaceDef();
   if (nd && nd->isLinkableInProject() && md->isLinkableInProject())
   {
@@ -2947,6 +2971,11 @@ void Index::addNamespaceMemberNameToIndex(const MemberDef *md)
 
 void Index::addFileMemberNameToIndex(const MemberDef *md)
 {
+  if (!md)
+  {
+    return;
+  }
+  Index& index = Index::instance();
   const FileDef *fd=md->getFileDef();
   if (fd && fd->isLinkableInProject() && md->isLinkableInProject())
   {

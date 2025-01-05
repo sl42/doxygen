@@ -53,6 +53,8 @@
 #include "dir.h"
 #include "doxygen.h"
 
+#include <sstream>
+
 // the graphicx LaTeX has a limitation of maximum size of 16384
 // To be on the save side we take it a little bit smaller i.e. 150 inch * 72 dpi
 // It is anyway hard to view these size of images
@@ -102,7 +104,7 @@ static bool resetPDFSize(const int width,const int height, const QCString &base)
   Dir thisDir;
   if (!thisDir.rename(patchFile.str(),tmpName.str()))
   {
-    err("Failed to rename file %s to %s!\n",qPrint(patchFile),qPrint(tmpName));
+    err("dotrunner resetPDFSize(): Failed to rename file %s to %s!\n",qPrint(patchFile),qPrint(tmpName));
     return FALSE;
   }
   std::ifstream fi = Portable::openInputStream(tmpName);
@@ -290,60 +292,102 @@ QCString getBaseNameOfOutput(const QCString &output)
 
 bool DotRunner::run()
 {
-  int exitCode=0;
+  int exitCode = 0;
 
   QCString dotArgs;
-
   QCString srcFile;
-  int srcLine=-1;
+  int srcLine = -1;
 
+  try
+  {
   // create output
   if (Config_getBool(DOT_MULTI_TARGETS))
   {
-    dotArgs=QCString("\"")+m_file+"\"";
-    for (auto& s: m_jobs)
+    dotArgs = QCString("\"") + m_file + "\"";
+    for (auto& s : m_jobs)
     {
-      dotArgs+=' ';
-      dotArgs+=s.args;
+      dotArgs += ' ';
+      dotArgs += s.args;
     }
     if (!m_jobs.empty())
     {
       srcFile = m_jobs.front().srcFile;
       srcLine = m_jobs.front().srcLine;
     }
-    if ((exitCode=Portable::system(m_dotExe,dotArgs,FALSE))!=0) goto error;
+    if ((exitCode = Portable::system(m_dotExe, dotArgs, FALSE)) != 0)
+      throw std::runtime_error("DOT_MULTI_TARGETS system call failed");
   }
   else
   {
+    size_t jobNdx = 0;
     for (auto& s : m_jobs)
     {
       srcFile = s.srcFile;
       srcLine = s.srcLine;
-      dotArgs=QCString("\"")+m_file+"\" "+s.args;
-      if ((exitCode=Portable::system(m_dotExe,dotArgs,FALSE))!=0) goto error;
+      dotArgs = QCString("\"") + m_file + "\" " + s.args;
+      if ((exitCode = Portable::system(m_dotExe, dotArgs, FALSE)) != 0)
+      {
+        std::ostringstream excMsg;
+        excMsg << "single target system call failed (ndx " << jobNdx
+          << " / " << m_jobs.size() << ")";
+        err_full(srcFile, srcLine, "Problems running dot: reason '%s'; code=%d, command='%s', arguments='%s'",
+          excMsg.str(), exitCode, m_dotExe, dotArgs);
+      }
+      ++jobNdx;
     }
   }
 
   // check output
   // As there should be only one pdf file be generated, we don't need code for regenerating multiple pdf files in one call
+  size_t jobNdx = 0;
   for (auto& s : m_jobs)
   {
+    try
+    {
     if (s.format.startsWith("pdf"))
     {
-      int width=0,height=0;
-      if (!readBoundingBox(s.output,&width,&height,FALSE)) goto error;
+      int width = 0, height = 0;
+      if (!readBoundingBox(s.output, &width, &height, FALSE))
+      {
+        std::ostringstream excMsg;
+        excMsg << "readBoundingBox failed (ndx " << jobNdx
+          << " / " << m_jobs.size() << ", width " << width
+          << ", height " << height << srcFile << ", line " << srcLine << ")";
+        throw std::runtime_error(excMsg.str());
+      }
       if ((width > MAX_LATEX_GRAPH_SIZE) || (height > MAX_LATEX_GRAPH_SIZE))
       {
-        if (!resetPDFSize(width,height,getBaseNameOfOutput(s.output))) goto error;
-        dotArgs=QCString("\"")+m_file+"\" "+s.args;
-        if ((exitCode=Portable::system(m_dotExe,dotArgs,FALSE))!=0) goto error;
+        if (!resetPDFSize(width, height, getBaseNameOfOutput(s.output)))
+        {
+          std::ostringstream excMsg;
+          excMsg << "resetPDFSize failed (ndx " << jobNdx
+            << " / " << m_jobs.size() << ", width " << width
+            << ", height " << height
+            << ", s_output_data: '" << s.output << "')";
+          throw std::runtime_error(excMsg.str());
+        }
+        dotArgs = QCString("\"") + m_file + "\" " + s.args;
+        if ((exitCode = Portable::system(m_dotExe, dotArgs, FALSE)) != 0)
+          throw std::runtime_error("DOT_MULTI_TARGETS system call failed");
+      }
+
+      if (s.format.startsWith("png"))
+      {
+        checkPngResult(s.output);
       }
     }
-
-    if (s.format.startsWith("png"))
-    {
-      checkPngResult(s.output);
     }
+    catch (std::exception& exc)
+    {
+      err_full(srcFile, srcLine, "Problems running dot: reason '%s'; code=%d, command='%s', arguments='%s'",
+        exc.what(), exitCode, m_dotExe.data(), dotArgs.data());
+    }
+    catch (...)
+    {
+      err_full(srcFile, srcLine, "Problems running dot: unknown exception; code=%d, command='%s', arguments='%s'",
+        exitCode, m_dotExe.data(), dotArgs.data());
+    }
+    ++jobNdx;
   }
 
   // remove .dot files
@@ -352,23 +396,30 @@ bool DotRunner::run()
     //printf("removing dot file %s\n",qPrint(m_file));
     Portable::unlink(m_file);
   }
-
+  
   // create checksum file
   if (!m_md5Hash.isEmpty())
   {
     QCString md5Name = getBaseNameOfOutput(m_file) + ".md5";
-    FILE *f = Portable::fopen(md5Name,"w");
+    FILE* f = Portable::fopen(md5Name, "w");
     if (f)
     {
-      fwrite(m_md5Hash.data(),1,32,f);
+      fwrite(m_md5Hash.data(), 1, 32, f);
       fclose(f);
     }
   }
+  }
+  catch (std::exception& exc)
+  {
+   err_full(srcFile,srcLine,"Problems running dot: reason '%s'; exit code=%d, command='%s', arguments='%s'",
+     exc.what(), exitCode,qPrint(m_dotExe),qPrint(dotArgs));
+  }
+  catch (...)
+  {
+    err_full(srcFile,srcLine,"Problems running dot: unknown exception; code=%d, command='%s', arguments='%s'",
+      exitCode,qPrint(m_dotExe),qPrint(dotArgs));
+  }
   return TRUE;
-error:
-  err_full(srcFile,srcLine,"Problems running dot: exit code=%d, command='%s', arguments='%s'",
-    exitCode,qPrint(m_dotExe),qPrint(dotArgs));
-  return FALSE;
 }
 
 

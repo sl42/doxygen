@@ -108,6 +108,10 @@ void msg(const char *fmt, ...)
     va_start(args, fmt);
     vfprintf(stdout, fmt, args);
     va_end(args);
+#ifdef _DEBUG
+    //xxx(42); // uncomment this line to check if the property works properly
+    fflush(stdout); // This command is necessary to locate the last processed file
+#endif
   }
 }
 
@@ -305,6 +309,8 @@ void term_(const char *fmt, ...)
       }
     }
   }
+  fflush(stdout);
+  fflush(stderr);
   exit(1);
 }
 
@@ -313,7 +319,34 @@ void warn_flush()
   fflush(g_warnFile);
 }
 
+void printlex(int dbg, bool enter, const char *lexName, const char *fileName)
+{
+  const char *enter_txt = "entering";
+  const char *enter_txt_uc = "Entering";
 
+  if (!enter)
+  {
+    enter_txt = "finished";
+    enter_txt_uc = "Finished";
+  }
+
+  std::unique_lock<std::mutex> lock(g_mutex);
+  if (dbg)
+  {
+    if (fileName)
+      fprintf(stderr,"--%s lexical analyzer: %s (for: %s)\n",enter_txt, qPrint(lexName), qPrint(fileName));
+    else
+      fprintf(stderr,"--%s lexical analyzer: %s\n",enter_txt, qPrint(lexName));
+    fflush(stderr);
+  }
+  else
+  {
+    if (fileName)
+      Debug::print(Debug::Lex,0,"%s lexical analyzer: %s (for: %s)\n",enter_txt_uc, qPrint(lexName), qPrint(fileName));
+    else
+      Debug::print(Debug::Lex,0,"%s lexical analyzer: %s\n",enter_txt_uc, qPrint(lexName));
+  }
+}
 
 extern void finishWarnExit()
 {

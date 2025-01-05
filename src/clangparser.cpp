@@ -33,11 +33,10 @@ static std::mutex g_clangMutex;
 ClangParser *ClangParser::instance()
 {
   std::lock_guard<std::mutex> lock(g_clangMutex);
-  if (s_instance==nullptr) s_instance = new ClangParser;
-  return s_instance;
+  static ClangParser s_instance;
+  return &s_instance;
 }
 
-ClangParser *ClangParser::s_instance = nullptr;
 
 //--------------------------------------------------------------------------
 #if USE_LIBCLANG
@@ -262,6 +261,7 @@ void ClangTUParser::parse()
   for (i=0;i<argv.size();++i)
   {
     qstrfree(argv[i]);
+    argv[i] = nullptr;
   }
 
   if (p->tu)
@@ -280,7 +280,10 @@ void ClangTUParser::parse()
   }
   else
   {
-    err("clang: Failed to parse translation unit %s\n",qPrint(fileName));
+    err("clang: Failed to parse translation unit '%s'; numUnsavedFiles: %i, 'p->ufs' entries: %u\n",
+        qPrint(fileName), numUnsavedFiles, p->ufs.size());
+    fflush(stdout);
+    fflush(stderr);
   }
 }
 

@@ -322,7 +322,7 @@ bool DotFilePatcher::run() const
   Dir thisDir;
   if (!thisDir.rename(m_patchFile.str(),tmpName.str()))
   {
-    err("Failed to rename file %s to %s!\n",qPrint(m_patchFile),qPrint(tmpName));
+    err("DotFilePatcher::run(): Failed to rename file %s to %s!\n",qPrint(m_patchFile),qPrint(tmpName));
     return FALSE;
   }
   std::ifstream fi = Portable::openInputStream(tmpName);

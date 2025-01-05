@@ -8082,25 +8082,46 @@ static void findDocumentedEnumValues()
 static void addMembersToIndex()
 {
   auto &index = Index::instance();
+  if (Doxygen::memberNameLinkedMap)
+  {
   // for each class member name
   for (const auto &mn : *Doxygen::memberNameLinkedMap)
   {
+    // for each member name
+    msg("%s", "Adding memberNameLinkedMap entries ...\n");
+    fflush(stdout);
+    if (mn)
+    {
     // for each member definition
     for (const auto &md : *mn)
     {
+      if (md.get())
+      {
       index.addClassMemberNameToIndex(md.get());
       if (md->getModuleDef())
       {
         index.addModuleMemberNameToIndex(md.get());
       }
+      }
+    }
     }
   }
+  }
+  
+  if (Doxygen::functionNameLinkedMap)
+  {
+  msg("%s", "Adding functionNameLinkedMap entries ...\n");
+  fflush(stdout);
   // for each file/namespace function name
   for (const auto &mn : *Doxygen::functionNameLinkedMap)
   {
+    if (mn)
+    {
     // for each member definition
     for (const auto &md : *mn)
     {
+      if (md)
+      {
       if (md->getNamespaceDef())
       {
         index.addNamespaceMemberNameToIndex(md.get());
@@ -8113,10 +8134,17 @@ static void addMembersToIndex()
       {
         index.addModuleMemberNameToIndex(md.get());
       }
+      }
+    }
     }
   }
+  }
+  msg("%s", "Calling sortMemberIndexLists() ...\n");
+  fflush(stdout);
 
   index.sortMemberIndexLists();
+  msg("%s", "Finished sortMemberIndexLists() ...\n");
+  fflush(stdout);
 }
 
 //----------------------------------------------------------------------
@@ -8291,9 +8319,13 @@ static void addToIndices()
 
 static void vhdlCorrectMemberProperties()
 {
+  if (Doxygen::memberNameLinkedMap)
+  {
   // for each member name
   for (const auto &mn : *Doxygen::memberNameLinkedMap)
   {
+    if (mn)
+    {
     // for each member definition
     for (const auto &imd : *mn)
     {
@@ -8302,11 +8334,17 @@ static void vhdlCorrectMemberProperties()
       {
         VhdlDocGen::correctMemberProperties(md);
       }
+    }
     }
   }
+  }
   // for each member name
+  if (Doxygen::functionNameLinkedMap)
+  {
   for (const auto &mn : *Doxygen::functionNameLinkedMap)
   {
+    if (mn)
+    {
     // for each member definition
     for (const auto &imd : *mn)
     {
@@ -8316,6 +8354,8 @@ static void vhdlCorrectMemberProperties()
         VhdlDocGen::correctMemberProperties(md);
       }
     }
+    }
+  }
   }
 }
 
@@ -8584,6 +8624,12 @@ static void generateFileSources()
 #endif
     {
       std::size_t numThreads = static_cast<std::size_t>(Config_getInt(NUM_PROC_THREADS));
+      if (numThreads==0)
+      {
+        numThreads = std::thread::hardware_concurrency();
+        msg("Generating code files: NUM_PROC_THREADS == 0: --> "
+            "std::thread::hardware_concurrency() said: %zu threads are usable ...\n", numThreads);
+      }
       if (numThreads>1)
       {
         msg("Generating code files using %zu threads.\n",numThreads);
@@ -9157,15 +9203,23 @@ static void inheritDocumentation()
 
 static void combineUsingRelations()
 {
+  if (Doxygen::inputNameLinkedMap)
+  {
   // for each file
   for (const auto &fn : *Doxygen::inputNameLinkedMap)
   {
+    if (fn)
+    {
     for (const auto &fd : *fn)
     {
       fd->combineUsingRelations();
     }
+    }
+  }
   }
 
+  if (Doxygen::namespaceLinkedMap)
+  {
   // for each namespace
   NamespaceDefSet visitedNamespaces;
   for (const auto &nd : *Doxygen::namespaceLinkedMap)
@@ -9175,6 +9229,7 @@ static void combineUsingRelations()
     {
       ndm->combineUsingRelations(visitedNamespaces);
     }
+  }
   }
 }
 
@@ -9342,7 +9397,10 @@ static void flushCachedTemplateRelations()
       if (fmd && fmd->isTypedefValCached())
       {
         const ClassDef *cd = fmd->getCachedTypedefVal();
-        if (cd->isTemplate()) fmd->invalidateTypedefValCache();
+        if (cd && cd->isTemplate())
+        {
+          fmd->invalidateTypedefValCache();
+        }
       }
     }
   }
@@ -9356,7 +9414,10 @@ static void flushCachedTemplateRelations()
       if (md && md->isTypedefValCached())
       {
         const ClassDef *cd = md->getCachedTypedefVal();
-        if (cd->isTemplate()) md->invalidateTypedefValCache();
+        if (cd && cd->isTemplate())
+        {
+          md->invalidateTypedefValCache();
+        }
       }
     }
   }
@@ -10644,6 +10705,8 @@ static std::shared_ptr<Entry> parseFile(OutlineParserInterface &parser,
 static void parseFilesMultiThreading(const std::shared_ptr<Entry> &root)
 {
   AUTO_TRACE();
+  try
+  {
 #if USE_LIBCLANG
   if (Doxygen::clangAssistedParsing)
   {
@@ -10659,6 +10722,12 @@ static void parseFilesMultiThreading(const std::shared_ptr<Entry> &root)
     std::mutex processedFilesLock;
     // process source files (and their include dependencies)
     std::size_t numThreads = static_cast<std::size_t>(Config_getInt(NUM_PROC_THREADS));
+    if (numThreads==0)
+    {
+      numThreads = std::thread::hardware_concurrency();
+      msg("parseFilesMultiThreading(): NUM_PROC_THREADS == 0: --> "
+        "std::thread::hardware_concurrency() said: %zu threads are usable ...\n", numThreads);
+    }
     msg("Processing input using %zu threads.\n",numThreads);
     ThreadPool threadPool(numThreads);
     using FutureType = std::vector< std::shared_ptr<Entry> >;
@@ -10677,8 +10746,19 @@ static void parseFilesMultiThreading(const std::shared_ptr<Entry> &root)
           FileDef *fd_l = findFileDef(Doxygen::inputNameLinkedMap,s.c_str(),ambig_l);
           auto clangParser = ClangParser::instance()->createTUParser(fd_l);
           auto parser = getParserForFile(s.c_str());
-          auto fileRoot { parseFile(*parser.get(),fd_l,s.c_str(),clangParser.get(),true) };
-          roots.push_back(fileRoot);
+
+          std::shared_ptr<Entry> fileRoot = {};
+          if (parser.get() != nullptr)
+          {
+            fileRoot = parseFile(*parser.get(),fd_l,s.c_str(),clangParser.get(),true);
+            roots.push_back(fileRoot);
+          }
+          else
+          {
+            msg("ERROR: Got no parser for file '%s'\n", (s.c_str() ? s.c_str() : ""));
+            fflush(stdout);
+            fflush(stderr);
+          }
 
           // Now process any include files in the same translation unit
           // first. When libclang is used this is much more efficient.
@@ -10698,8 +10778,17 @@ static void parseFilesMultiThreading(const std::shared_ptr<Entry> &root)
                 if (ifd && !ifd->isReference())
                 {
                   //printf("  Processing %s in same translation unit as %s\n",incFile,s->c_str());
-                  fileRoot = parseFile(*parser.get(),ifd,incFile.c_str(),clangParser.get(),false);
-                  roots.push_back(fileRoot);
+                  if (parser.get() != nullptr)
+                  {
+                    fileRoot = parseFile(*parser.get(),ifd,incFile.c_str(),clangParser.get(),false);
+                    roots.push_back(fileRoot);
+                  }
+                  else
+                  {
+                    msg("ERROR: Got no parser for file '%s'\n", (incFile.c_str() ? incFile.c_str() : ""));
+                    fflush(stdout);
+                    fflush(stderr);
+                  }
                 }
               }
             }
@@ -10785,12 +10874,27 @@ static void parseFilesMultiThreading(const std::shared_ptr<Entry> &root)
       root->moveToSubEntryAndKeep(f.get());
     }
   }
+  }
+  catch (const std::exception &exc)
+  {
+    std::cerr << "parseFilesMultiThreading(root): Caught exception: '" << (exc.what() ? exc.what() : "--nullptr--") << "' ..." << std::endl;
+    fflush(stdout);
+    fflush(stderr);
+  }
+  catch (...)
+  {
+    std::cerr << "parseFilesMultiThreading(root): Caught unknown exception ..." << std::endl;
+    fflush(stdout);
+    fflush(stderr);
+  }
 }
 
 //! parse the list of input files
 static void parseFilesSingleThreading(const std::shared_ptr<Entry> &root)
 {
   AUTO_TRACE();
+  try
+  {
 #if USE_LIBCLANG
   if (Doxygen::clangAssistedParsing)
   {
@@ -10873,6 +10977,19 @@ static void parseFilesSingleThreading(const std::shared_ptr<Entry> &root)
       std::shared_ptr<Entry> fileRoot = parseFile(*parser.get(),fd,s.c_str(),nullptr,true);
       root->moveToSubEntryAndKeep(std::move(fileRoot));
     }
+  }
+  }
+  catch (const std::exception &exc)
+  {
+    std::cerr << "parseFilesSingleThreading(root): Caught exception: '" << (exc.what() ? exc.what() : "--nullptr--") << "' ..." << std::endl;
+    fflush(stdout);
+    fflush(stderr);
+  }
+  catch (...)
+  {
+    std::cerr << "parseFilesSingleThreading(root): Caught unknown exception ..." << std::endl;
+    fflush(stdout);
+    fflush(stderr);
   }
 }
 

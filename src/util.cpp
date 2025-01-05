@@ -3646,6 +3646,11 @@ int getPrefixIndex(const QCString &name)
 // the character itself will be copied as a UTF-8 encoded string to ids.
 int getUtf8Char(const char *input,char ids[MAX_UTF8_CHAR_SIZE],CaseModifier modifier)
 {
+  if (input == nullptr)
+  {
+    return 0;
+  }
+
   int inputLen=1;
   const unsigned char uc = (unsigned char)*input;
   bool validUTF8Char = false;

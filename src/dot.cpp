@@ -204,21 +204,38 @@ bool DotManager::run()
   // (for zoomable SVGs), and patching the .html files requires reading that
   // header after the SVG is patched, we first process the .svg files and
   // then the other files.
+  msg("Number of 'm_filePatchers': %zu\n", m_filePatchers.size());
+  if (m_filePatchers.size() != numFilePatchers)
+  {
+    msg("Warning: The number of  'm_filePatchers' (%zu) and the 'numFilePatchers' (%zu) number are different!\n",
+        m_filePatchers.size(), numFilePatchers);
+  }
   for (auto & fp : m_filePatchers)
   {
     if (fp.second.isSVGFile())
     {
-      msg("Patching output file %zu/%zu\n",i,numFilePatchers);
-      if (!fp.second.run()) return FALSE;
+      msg("Patching SVG output file %zu/%zu\n",i,numFilePatchers);
+      if (!fp.second.run())
+      {
+        msg("ERROR: Failed to patch SVG output file %zu/%zu (fp.second.run() returned 'false')\n", i, numFilePatchers);
+      }
       i++;
     }
+  }
+  if (m_filePatchers.size() != numFilePatchers)
+  {
+    msg("Warning: The number of  'm_filePatchers' (%zu) and the 'numFilePatchers' number (%zu) are different!\n", 
+        m_filePatchers.size(), numFilePatchers);
   }
   for (auto& fp : m_filePatchers)
   {
     if (!fp.second.isSVGFile())
     {
-      msg("Patching output file %zu/%zu\n",i,numFilePatchers);
-      if (!fp.second.run()) return FALSE;
+      msg("Patching non-SVG output file %zu/%zu\n",i,numFilePatchers);
+      if (!fp.second.run())
+      {
+        msg("ERROR: Failed to patch non-SVG output file %zu/%zu (fp.second.run() returned 'false')\n", i, numFilePatchers);
+      }
       i++;
     }
   }

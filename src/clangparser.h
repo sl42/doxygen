@@ -91,7 +91,6 @@ class ClangParser
     ClangParser();
     NON_COPYABLE(ClangParser)
     virtual ~ClangParser();
-    static ClangParser *s_instance;
 };
 
 #endif

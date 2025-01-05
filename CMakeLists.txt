@@ -39,7 +39,7 @@ option(enable_lex_debug "Enable debugging info for lexical scanners in release b
 set(force_qt CACHE INTERNAL "Forces doxywizard to build using the specified major version, this can be Qt5 or Qt6")
 set_property(CACHE force_qt PROPERTY STRINGS OFF Qt6 Qt5)
 
-SET(enlarge_lex_buffers "262144" CACHE INTERNAL "Sets the lex input and read buffers to the specified size")
+SET(enlarge_lex_buffers "1048575" CACHE INTERNAL "Sets the lex input and read buffers to the specified size")
 
 if(enable_coverage)
   if ("${PROJECT_BINARY_DIR}" STREQUAL "${PROJECT_SOURCE_DIR}")
@@ -140,6 +140,9 @@ if (WIN32)
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LARGEADDRESSAWARE")
     endif()
     if (CMAKE_GENERATOR MATCHES "NMake Makefiles")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
+    endif()
+    if (CMAKE_GENERATOR MATCHES "Visual Studio 17 2022")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
     endif()
 endif()
