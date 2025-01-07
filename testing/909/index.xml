@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygenindex xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="index.xsd" version="1.14.0" xml:lang="en-US">
+  <compound refid="class_deprecated01" kind="class"><name>Deprecated01</name>
+    <member refid="class_deprecated01_1afb7a1b147958a07c31c7093e8cc157ef" kind="typedef"><name>INT_PTR</name></member>
+    <member refid="class_deprecated01_1ad79c796e0fc744fb05d84ad1f143d17b" kind="variable"><name>deprecatedIntValue</name></member>
+    <member refid="class_deprecated01_1a02ff4263a12fc21b28211dfcd7f7eb97" kind="function"><name>deprecated</name></member>
+  </compound>
+  <compound refid="909__cpp__deprecated__attribute_8cpp" kind="file"><name>909_cpp_deprecated_attribute.cpp</name>
+    <member refid="909__cpp__deprecated__attribute_8cpp_1a384502550bbf638d41e0b9f0ccde46c0" kind="function"><name>deprecatedGlobalFunction01</name></member>
+    <member refid="909__cpp__deprecated__attribute_8cpp_1aefb6866e8607213c9d96d831825d90ec" kind="function"><name>deprecatedGlobalFunction02</name></member>
+  </compound>
+  <compound refid="deprecated" kind="page"><name>deprecated</name>
+  </compound>
+</doxygenindex>

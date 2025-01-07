@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="" xml:lang="en-US">
+  <compounddef id="namespace_deprecated_namespace" kind="namespace" language="C++">
+    <compoundname>DeprecatedNamespace</compoundname>
+    <sectiondef kind="var">
+      <memberdef kind="variable" id="namespace_deprecated_namespace_1a774b0175b2705d05e598407de859327e" prot="public" static="no" mutable="no">
+        <type>int</type>
+        <definition>int DeprecatedNamespace::x</definition>
+        <argsstring/>
+        <name>x</name>
+        <qualifiedname>DeprecatedNamespace::x</qualifiedname>
+        <briefdescription>
+          <para>implcitly deprecated due to the deprecated namespace </para>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="909_cpp_deprecated_attribute.cpp" line="53" column="7" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="53" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+      <para>This is a deprecated namespace. </para>
+    </briefdescription>
+    <detaileddescription>
+      <para>
+        <xrefsect id="deprecated_1_deprecated000006">
+          <xreftitle>Deprecated</xreftitle>
+          <xrefdescription>
+            <para>This namespace <bold>MUST NOT</bold> be used any more  </para>
+          </xrefdescription>
+        </xrefsect>
+      </para>
+    </detaileddescription>
+    <location file="909_cpp_deprecated_attribute.cpp" line="51" column="1"/>
+  </compounddef>
+</doxygen>

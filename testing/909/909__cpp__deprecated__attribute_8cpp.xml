@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="" xml:lang="en-US">
+  <compounddef id="909__cpp__deprecated__attribute_8cpp" kind="file" language="C++">
+    <compoundname>909_cpp_deprecated_attribute.cpp</compoundname>
+    <innerclass refid="class_deprecated01" prot="public">Deprecated01</innerclass>
+    <innernamespace refid="namespace_deprecated_namespace">DeprecatedNamespace</innernamespace>
+    <sectiondef kind="func">
+      <memberdef kind="function" id="909__cpp__deprecated__attribute_8cpp_1a0f7b4ea1af08ad255a08328410e1e08d" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>unsigned long</type>
+        <definition>unsigned long deprecatedGlobalFunction00</definition>
+        <argsstring>()</argsstring>
+        <name>deprecatedGlobalFunction00</name>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+          <para>
+            <xrefsect id="deprecated_1_deprecated000001">
+              <xreftitle>Deprecated</xreftitle>
+              <xrefdescription/>
+            </xrefsect>
+          </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="909_cpp_deprecated_attribute.cpp" line="7" column="15" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="7" bodyend="9"/>
+      </memberdef>
+      <memberdef kind="function" id="909__cpp__deprecated__attribute_8cpp_1a384502550bbf638d41e0b9f0ccde46c0" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>unsigned long</type>
+        <definition>unsigned long deprecatedGlobalFunction01</definition>
+        <argsstring>()</argsstring>
+        <name>deprecatedGlobalFunction01</name>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+          <para>
+            <xrefsect id="deprecated_1_deprecated000002">
+              <xreftitle>Deprecated</xreftitle>
+              <xrefdescription>
+                <para>Do <bold>NOT</bold> use '<computeroutput>deprecatedGlobalFunction01()</computeroutput>'  </para>
+              </xrefdescription>
+            </xrefsect>
+          </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="909_cpp_deprecated_attribute.cpp" line="12" column="15" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="12" bodyend="14"/>
+      </memberdef>
+      <memberdef kind="function" id="909__cpp__deprecated__attribute_8cpp_1aefb6866e8607213c9d96d831825d90ec" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>unsigned long</type>
+        <definition>unsigned long deprecatedGlobalFunction02</definition>
+        <argsstring>()</argsstring>
+        <name>deprecatedGlobalFunction02</name>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+          <para>In this example the Doxygen command and the C++ attribute are being mixed. <xrefsect id="deprecated_1_deprecated000003"><xreftitle>Deprecated</xreftitle><xrefdescription><para>Mixture of a Doxygen comment and a C++ '<computeroutput>deprecated</computeroutput>' attribute </para></xrefdescription></xrefsect></para>
+          <para>
+            <xrefsect id="deprecated_1_deprecated000004">
+              <xreftitle>Deprecated</xreftitle>
+              <xrefdescription>
+                <para>Do <bold>NOT</bold> use '<computeroutput>deprecatedGlobalFunction02()</computeroutput>'  </para>
+              </xrefdescription>
+            </xrefsect>
+          </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="909_cpp_deprecated_attribute.cpp" line="19" column="15" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="19" bodyend="21"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="909_cpp_deprecated_attribute.cpp"/>
+  </compounddef>
+</doxygen>

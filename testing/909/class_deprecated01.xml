@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="" xml:lang="en-US">
+  <compounddef id="class_deprecated01" kind="class" language="C++" prot="public">
+    <compoundname>Deprecated01</compoundname>
+    <sectiondef kind="private-type">
+      <memberdef kind="typedef" id="class_deprecated01_1afb7a1b147958a07c31c7093e8cc157ef" prot="private" static="no">
+        <type>int *</type>
+        <definition>typedef int* Deprecated01::INT_PTR</definition>
+        <argsstring/>
+        <name>INT_PTR</name>
+        <qualifiedname>Deprecated01::INT_PTR</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+          <para>
+            <xrefsect id="deprecated_1_deprecated000007">
+              <xreftitle>Deprecated</xreftitle>
+              <xrefdescription>
+                <para>Do <bold>NOT</bold> use the typedef '<computeroutput>INT_PTR</computeroutput>' any more  </para>
+              </xrefdescription>
+            </xrefsect>
+          </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="909_cpp_deprecated_attribute.cpp" line="39" column="18" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="39" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="private-attrib">
+      <memberdef kind="variable" id="class_deprecated01_1ad79c796e0fc744fb05d84ad1f143d17b" prot="private" static="no" mutable="no">
+        <type>int</type>
+        <definition>int Deprecated01::deprecatedIntValue</definition>
+        <argsstring/>
+        <name>deprecatedIntValue</name>
+        <qualifiedname>Deprecated01::deprecatedIntValue</qualifiedname>
+        <initializer>{ 42 }</initializer>
+        <briefdescription>
+          <para>deprecated attribute </para>
+        </briefdescription>
+        <detaileddescription>
+          <para>
+            <xrefsect id="deprecated_1_deprecated000008">
+              <xreftitle>Deprecated</xreftitle>
+              <xrefdescription>
+                <para>'<computeroutput>deprecatedIntValue</computeroutput>' must <bold>NOT</bold> be used!  </para>
+              </xrefdescription>
+            </xrefsect>
+          </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="909_cpp_deprecated_attribute.cpp" line="42" column="10" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="42" bodyend="42"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="public-func">
+      <memberdef kind="function" id="class_deprecated01_1a02ff4263a12fc21b28211dfcd7f7eb97" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void Deprecated01::deprecated</definition>
+        <argsstring>()</argsstring>
+        <name>deprecated</name>
+        <qualifiedname>Deprecated01::deprecated</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+          <para>Does deprecated things.</para>
+          <para>
+            <xrefsect id="deprecated_1_deprecated000009">
+              <xreftitle>Deprecated</xreftitle>
+              <xrefdescription>
+                <para>Do <bold>NOT</bold> use '<computeroutput><ref refid="class_deprecated01_1a02ff4263a12fc21b28211dfcd7f7eb97" kindref="member">deprecated()</ref></computeroutput>' any more  </para>
+              </xrefdescription>
+            </xrefsect>
+          </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="909_cpp_deprecated_attribute.cpp" line="46" column="11"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+      <para>Test with <bold>ONLY</bold> C++ attribute '<computeroutput>[[deprecated]]</computeroutput>' but <bold>WITH</bold> formatted comment within the C++ 14 attribute</para>
+      <para>
+        <xrefsect id="deprecated_1_deprecated000005">
+          <xreftitle>Deprecated</xreftitle>
+          <xrefdescription>
+            <para>The class '<computeroutput><ref refid="class_deprecated01" kindref="compound">Deprecated01</ref></computeroutput>' is deprecated  </para>
+          </xrefdescription>
+        </xrefsect>
+      </para>
+    </detaileddescription>
+    <location file="909_cpp_deprecated_attribute.cpp" line="36" column="1" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="37" bodyend="47"/>
+    <listofallmembers>
+      <member refid="class_deprecated01_1a02ff4263a12fc21b28211dfcd7f7eb97" prot="public" virt="non-virtual">
+        <scope>Deprecated01</scope>
+        <name>deprecated</name>
+      </member>
+      <member refid="class_deprecated01_1ad79c796e0fc744fb05d84ad1f143d17b" prot="private" virt="non-virtual">
+        <scope>Deprecated01</scope>
+        <name>deprecatedIntValue</name>
+      </member>
+      <member refid="class_deprecated01_1afb7a1b147958a07c31c7093e8cc157ef" prot="private" virt="non-virtual">
+        <scope>Deprecated01</scope>
+        <name>INT_PTR</name>
+      </member>
+    </listofallmembers>
+  </compounddef>
+</doxygen>
