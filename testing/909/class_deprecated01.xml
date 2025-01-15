@@ -10,20 +10,21 @@
         <name>INT_PTR</name>
         <qualifiedname>Deprecated01::INT_PTR</qualifiedname>
         <briefdescription>
+          <para>A deprecated typedef named '<computeroutput>INT_PTR</computeroutput>'. </para>
         </briefdescription>
         <detaileddescription>
           <para>
-            <xrefsect id="deprecated_1_deprecated000007">
+            <xrefsect id="deprecated_1_deprecated000008">
               <xreftitle>Deprecated</xreftitle>
               <xrefdescription>
-                <para>Do <bold>NOT</bold> use the typedef '<computeroutput>INT_PTR</computeroutput>' any more  </para>
+                <para>Do <bold>N O T</bold> use the typedef '<computeroutput>INT_PTR</computeroutput>' any more  </para>
               </xrefdescription>
             </xrefsect>
           </para>
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="909_cpp_deprecated_attribute.cpp" line="39" column="18" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="39" bodyend="-1"/>
+        <location file="909_cpp_deprecated_attribute.cpp" line="54" column="18" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="54" bodyend="-1"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="private-attrib">
@@ -39,7 +40,7 @@
         </briefdescription>
         <detaileddescription>
           <para>
-            <xrefsect id="deprecated_1_deprecated000008">
+            <xrefsect id="deprecated_1_deprecated000009">
               <xreftitle>Deprecated</xreftitle>
               <xrefdescription>
                 <para>'<computeroutput>deprecatedIntValue</computeroutput>' must <bold>NOT</bold> be used!  </para>
@@ -49,7 +50,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="909_cpp_deprecated_attribute.cpp" line="42" column="10" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="42" bodyend="42"/>
+        <location file="909_cpp_deprecated_attribute.cpp" line="57" column="10" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="57" bodyend="57"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="public-func">
@@ -64,7 +65,7 @@
         <detaileddescription>
           <para>Does deprecated things.</para>
           <para>
-            <xrefsect id="deprecated_1_deprecated000009">
+            <xrefsect id="deprecated_1_deprecated000010">
               <xreftitle>Deprecated</xreftitle>
               <xrefdescription>
                 <para>Do <bold>NOT</bold> use '<computeroutput><ref refid="class_deprecated01_1a02ff4263a12fc21b28211dfcd7f7eb97" kindref="member">deprecated()</ref></computeroutput>' any more  </para>
@@ -74,7 +75,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="909_cpp_deprecated_attribute.cpp" line="46" column="11"/>
+        <location file="909_cpp_deprecated_attribute.cpp" line="61" column="11"/>
       </memberdef>
     </sectiondef>
     <briefdescription>
@@ -90,7 +91,7 @@
         </xrefsect>
       </para>
     </detaileddescription>
-    <location file="909_cpp_deprecated_attribute.cpp" line="36" column="1" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="37" bodyend="47"/>
+    <location file="909_cpp_deprecated_attribute.cpp" line="50" column="1" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="51" bodyend="62"/>
     <listofallmembers>
       <member refid="class_deprecated01_1a02ff4263a12fc21b28211dfcd7f7eb97" prot="public" virt="non-virtual">
         <scope>Deprecated01</scope>

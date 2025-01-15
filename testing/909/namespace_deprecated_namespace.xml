@@ -16,7 +16,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="909_cpp_deprecated_attribute.cpp" line="53" column="7" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="53" bodyend="-1"/>
+        <location file="909_cpp_deprecated_attribute.cpp" line="78" column="7" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="78" bodyend="-1"/>
       </memberdef>
     </sectiondef>
     <briefdescription>
@@ -24,7 +24,7 @@
     </briefdescription>
     <detaileddescription>
       <para>
-        <xrefsect id="deprecated_1_deprecated000006">
+        <xrefsect id="deprecated_1_deprecated000007">
           <xreftitle>Deprecated</xreftitle>
           <xrefdescription>
             <para>This namespace <bold>MUST NOT</bold> be used any more  </para>
@@ -32,6 +32,6 @@
         </xrefsect>
       </para>
     </detaileddescription>
-    <location file="909_cpp_deprecated_attribute.cpp" line="51" column="1"/>
+    <location file="909_cpp_deprecated_attribute.cpp" line="76" column="1"/>
   </compounddef>
 </doxygen>

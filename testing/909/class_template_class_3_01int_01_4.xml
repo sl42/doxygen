@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="" xml:lang="en-US">
+  <compounddef id="class_template_class_3_01int_01_4" kind="class" language="C++" prot="public">
+    <compoundname>TemplateClass&lt; int &gt;</compoundname>
+    <templateparamlist>
+    </templateparamlist>
+    <briefdescription>
+      <para>deprecated template specialization </para>
+    </briefdescription>
+    <detaileddescription>
+      <para>
+        <xrefsect id="deprecated_1_deprecated000006">
+          <xreftitle>Deprecated</xreftitle>
+          <xrefdescription>
+            <para>Do <bold>NOT</bold> use '<computeroutput><ref refid="class_template_class" kindref="compound">TemplateClass</ref>&lt;int&gt;</computeroutput>'  </para>
+          </xrefdescription>
+        </xrefsect>
+      </para>
+    </detaileddescription>
+    <location file="909_cpp_deprecated_attribute.cpp" line="70" column="10" bodyfile="909_cpp_deprecated_attribute.cpp" bodystart="71" bodyend="72"/>
+    <listofallmembers>
+    </listofallmembers>
+  </compounddef>
+</doxygen>
