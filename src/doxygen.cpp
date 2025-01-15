@@ -942,11 +942,16 @@ static void addClassToContext(const Entry *root)
   QCString fullName = root->name;
 
   // strip off any template parameters (but not those for specializations)
+  int idx=fullName.find('>');
+  if (idx!=-1 && root->lang==SrcLangExt::CSharp) // mangle A<S,T>::N as A-2-g::N
+  {
+    fullName = mangleCSharpGenericName(fullName.left(idx+1))+fullName.mid(idx+1);
+  }
   fullName=stripTemplateSpecifiersFromScope(fullName);
 
   // name with scope (if not present already)
   QCString qualifiedName = fullName;
-  if (!scName.isEmpty() && !leftScopeMatch(fullName,scName))
+  if (!scName.isEmpty() && !leftScopeMatch(scName,fullName))
   {
     qualifiedName.prepend(scName+"::");
   }
@@ -3177,7 +3182,14 @@ static void addVariable(const Entry *root,int isFuncPtr=-1)
   bool isMemberOf=FALSE;
 
   QCString classScope=stripAnonymousNamespaceScope(scope);
-  classScope=stripTemplateSpecifiersFromScope(classScope,FALSE);
+  if (root->lang==SrcLangExt::CSharp)
+  {
+    classScope=mangleCSharpGenericName(classScope);
+  }
+  else
+  {
+    classScope=stripTemplateSpecifiersFromScope(classScope,FALSE);
+  }
   QCString annScopePrefix=scope.left(scope.length()-classScope.length());
 
 
@@ -7496,6 +7508,10 @@ static void findEnums(const Entry *root)
     if (i!=-1) // scope is specified
     {
       scope=root->name.left(i); // extract scope
+      if (root->lang==SrcLangExt::CSharp)
+      {
+        scope = mangleCSharpGenericName(scope);
+      }
       name=root->name.right(root->name.length()-i-2); // extract name
       if ((cd=getClassMutable(scope))==nullptr)
       {
@@ -7667,6 +7683,10 @@ static void addEnumValuesToEnums(const Entry *root)
     if (i!=-1) // scope is specified
     {
       scope=root->name.left(i); // extract scope
+      if (root->lang==SrcLangExt::CSharp)
+      {
+        scope = mangleCSharpGenericName(scope);
+      }
       name=root->name.right(root->name.length()-i-2); // extract name
       if ((cd=getClassMutable(scope))==nullptr)
       {
@@ -7678,6 +7698,10 @@ static void addEnumValuesToEnums(const Entry *root)
       if (root->parent()->section.isScope() && !root->parent()->name.isEmpty()) // found enum docs inside a compound
       {
         scope=root->parent()->name;
+        if (root->lang==SrcLangExt::CSharp)
+        {
+          scope = mangleCSharpGenericName(scope);
+        }
         if ((cd=getClassMutable(scope))==nullptr) nd=getResolvedNamespaceMutable(scope);
       }
       name=root->name;
@@ -7748,6 +7772,11 @@ static void addEnumValuesToEnums(const Entry *root)
                 //printf("md->qualifiedName()=%s e->name=%s tagInfo=%p name=%s\n",
                 //    qPrint(md->qualifiedName()),qPrint(e->name),(void*)e->tagInfo(),qPrint(e->name));
                 QCString qualifiedName = root->name;
+                i = qualifiedName.findRev("::");
+                if (i!=-1 && sle==SrcLangExt::CSharp)
+                {
+                  qualifiedName = mangleCSharpGenericName(qualifiedName.left(i))+qualifiedName.mid(i);
+                }
                 if (isJavaLike)
                 {
                   qualifiedName=substitute(qualifiedName,"::",".");
@@ -9030,6 +9059,7 @@ static void countMembers()
 
 static void generateDocsForClassList(const std::vector<ClassDefMutable*> &classList)
 {
+  AUTO_TRACE();
   std::size_t numThreads = static_cast<std::size_t>(Config_getInt(NUM_PROC_THREADS));
   if (numThreads>1) // multi threaded processing
   {
@@ -9046,7 +9076,7 @@ static void generateDocsForClassList(const std::vector<ClassDefMutable*> &classL
     {
       //printf("cd=%s getOuterScope=%p global=%p\n",qPrint(cd->name()),cd->getOuterScope(),Doxygen::globalScope);
       if (cd->getOuterScope()==nullptr || // <-- should not happen, but can if we read an old tag file
-           cd->getOuterScope()==Doxygen::globalScope // only look at global classes
+          cd->getOuterScope()==Doxygen::globalScope // only look at global classes
          )
       {
         auto ctx = std::make_shared<DocContext>(cd,*g_outputList);
@@ -9057,7 +9087,7 @@ static void generateDocsForClassList(const std::vector<ClassDefMutable*> &classL
           // skip external references, anonymous compounds and
           // template instances
           if (!ctx->cd->isHidden() && !ctx->cd->isEmbeddedInOuterScope() &&
-              ctx->cd->isLinkableInProject() && ctx->cd->templateMaster()==nullptr)
+              ctx->cd->isLinkableInProject() && !ctx->cd->isImplicitTemplateInstance())
           {
             ctx->cd->writeDocumentation(ctx->ol);
             ctx->cd->writeMemberList(ctx->ol);
@@ -9088,7 +9118,7 @@ static void generateDocsForClassList(const std::vector<ClassDefMutable*> &classL
         // skip external references, anonymous compounds and
         // template instances
         if ( !cd->isHidden() && !cd->isEmbeddedInOuterScope() &&
-              cd->isLinkableInProject() && cd->templateMaster()==nullptr)
+              cd->isLinkableInProject() && !cd->isImplicitTemplateInstance())
         {
           msg("Generating docs for compound %s...\n",qPrint(cd->displayName()));
 
@@ -9108,7 +9138,13 @@ static void addClassAndNestedClasses(std::vector<ClassDefMutable*> &list,ClassDe
   for (const auto &innerCdi : cd->getClasses())
   {
     ClassDefMutable *innerCd = toClassDefMutable(innerCdi);
-    if (innerCd && innerCd->isLinkableInProject() && innerCd->templateMaster()==nullptr &&
+    if (innerCd)
+    {
+       AUTO_TRACE("innerCd={} isLinkable={} isImplicitTemplateInstance={} protectLevelVisible={} embeddedInOuterScope={}",
+           innerCd->name(),innerCd->isLinkableInProject(),innerCd->isImplicitTemplateInstance(),protectionLevelVisible(innerCd->protection()),
+           innerCd->isEmbeddedInOuterScope());
+    }
+    if (innerCd && innerCd->isLinkableInProject() && !innerCd->isImplicitTemplateInstance() &&
         protectionLevelVisible(innerCd->protection()) &&
         !innerCd->isEmbeddedInOuterScope()
        )
@@ -10078,7 +10114,7 @@ static void generateNamespaceClassDocs(const ClassLinkedRefMap &classList)
         auto processFile = [ctx]()
         {
           if ( ( ctx->cdm->isLinkableInProject() &&
-                ctx->cdm->templateMaster()==nullptr
+                !ctx->cdm->isImplicitTemplateInstance()
                ) // skip external references, anonymous compounds and
               // template instances and nested classes
               && !ctx->cdm->isHidden() && !ctx->cdm->isEmbeddedInOuterScope()
@@ -10109,7 +10145,7 @@ static void generateNamespaceClassDocs(const ClassLinkedRefMap &classList)
       if (cdm)
       {
         if ( ( cd->isLinkableInProject() &&
-              cd->templateMaster()==nullptr
+              !cd->isImplicitTemplateInstance()
              ) // skip external references, anonymous compounds and
             // template instances and nested classes
             && !cd->isHidden() && !cd->isEmbeddedInOuterScope()
