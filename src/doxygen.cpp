@@ -231,7 +231,7 @@ class Statistics
     Statistics() {}
     void begin(const char *name)
     {
-      msg("%s", name);
+      msg("{}", name);
       stats.emplace_back(name,0);
       startTime = std::chrono::steady_clock::now();
     }
@@ -253,7 +253,7 @@ class Statistics
       msg("----------------------\n");
       for (const auto &s : stats)
       {
-        msg("Spent %.6f seconds in %s",s.elapsed,s.name);
+        msg("Spent {:.6f} seconds in {}",s.elapsed,s.name);
       }
       if (restore) Debug::setFlag(Debug::Time);
     }
@@ -376,8 +376,8 @@ static void buildGroupListFiltered(const Entry *root,bool additional, bool inclu
         else if ( root->type.length() > 0 && root->name != root->type && gd->groupTitle() != root->type )
         {
           warn( root->fileName,root->startLine,
-              "group %s: ignoring title \"%s\" that does not match old title \"%s\"",
-              qPrint(root->name), qPrint(root->type), qPrint(gd->groupTitle()) );
+              "group {}: ignoring title \"{}\" that does not match old title \"{}\"",
+              root->name, root->type, gd->groupTitle() );
         }
         gd->setBriefDescription(root->brief,root->briefFile,root->briefLine);
         gd->setDocumentation( root->doc, root->docFile, root->docLine );
@@ -547,10 +547,10 @@ static void buildFileList(const Entry *root)
         else if (!gd && g.pri == Grouping::GROUPING_INGROUP)
         {
           warn(root->fileName, root->startLine,
-              "Found non-existing group '%s' for the command '%s', ignoring command",
-              qPrint(g.groupname), Grouping::getGroupPriName( g.pri )
+               "Found non-existing group '{}' for the command '{}', ignoring command",
+               g.groupname, Grouping::getGroupPriName( g.pri )
               );
-    }
+        }
       }
     }
     else
@@ -571,7 +571,7 @@ static void buildFileList(const Entry *root)
       {
         text+="is not an input file";
       }
-      warn(root->fileName,root->startLine,"%s", qPrint(text));
+      warn(root->fileName,root->startLine,"{}", text);
     }
   }
   for (const auto &e : root->children()) buildFileList(e.get());
@@ -627,7 +627,7 @@ static void addIncludeFile(DefMutable *cd,FileDef *ifd,const Entry *root)
       {
         text+="is not an input file";
       }
-      warn(root->fileName,root->startLine, "%s", qPrint(text));
+      warn(root->fileName,root->startLine, "{}", text);
     }
     else if (includeFile.isEmpty() && ifd &&
         // see if the file extension makes sense
@@ -1436,8 +1436,8 @@ static void resolveClassNestingRelations()
         }
         cd->setOuterScope(d);
         warn(cd->getDefFileName(),cd->getDefLine(),
-            "Internal inconsistency: scope for class %s not "
-            "found!",qPrint(name)
+            "Internal inconsistency: scope for class {} not "
+            "found!",name
             );
       }
     }
@@ -5050,8 +5050,8 @@ static bool findClassRelation(
             {
               warn(root->fileName,root->startLine,
                   "Detected potential recursive class relation "
-                  "between class %s and base class %s!",
-                  qPrint(cd->name()),qPrint(baseClass->name())
+                  "between class {} and base class {}!",
+                  cd->name(),baseClass->name()
                   );
             }
           }
@@ -5152,8 +5152,8 @@ static bool findClassRelation(
         {
           warn(root->fileName,root->startLine,
               "Detected potential recursive class relation "
-              "between class %s and base class %s!",
-              qPrint(root->name),qPrint(baseClassName)
+              "between class {} and base class {}!",
+              root->name,baseClassName
               );
         }
         // for mode==TemplateInstance this case is quite common and
@@ -5305,9 +5305,9 @@ static void warnUndocumentedNamespaces()
           !Config_getBool(HIDE_UNDOC_NAMESPACES)            // undocumented namespaces are visible
          )
       {
-        warn_undoc(nd->getDefFileName(),nd->getDefLine(), "%s %s is not documented.",
+        warn_undoc(nd->getDefFileName(),nd->getDefLine(), "{} {} is not documented.",
                    nd->getLanguage() == SrcLangExt::Fortran ? "Module" : "Namespace",
-                   qPrint(nd->name()));
+                   nd->name());
       }
     }
   }
@@ -5333,11 +5333,7 @@ static void computeClassRelations()
            protectionLevelVisible(root->protection) && // hidden by protection
            !Config_getBool(HIDE_UNDOC_CLASSES) // undocumented class are visible
          )
-        warn_undoc(
-                   root->fileName,root->startLine,
-                   "Compound %s is not documented.",
-                   qPrint(root->name)
-             );
+        warn_undoc(root->fileName,root->startLine, "Compound {} is not documented.", root->name);
     }
   }
 }
@@ -5659,11 +5655,9 @@ static void addMemberDocs(const Entry *root,
     {
       if (md->getMemberGroupId()!=root->mGrpId)
       {
-        warn(
-             root->fileName,root->startLine,
-             "member %s belongs to two different groups. The second "
-             "one found here will be ignored.",
-             qPrint(md->name())
+        warn(root->fileName,root->startLine,
+             "member {} belongs to two different groups. The second one found here will be ignored.",
+             md->name()
             );
       }
     }
@@ -5891,19 +5885,18 @@ static bool findGlobalMember(const Entry *root,
     {
       QCString fullFuncDecl=decl;
       if (!root->argList.empty()) fullFuncDecl+=argListToString(root->argList,TRUE);
-      QCString warnMsg =
-         QCString("no matching file member found for \n")+substitute(fullFuncDecl,"%","%%");
+      QCString warnMsg = "no matching file member found for \n"+fullFuncDecl;
       if (mn->size()>0)
       {
         warnMsg+="\nPossible candidates:";
         for (const auto &md : *mn)
         {
           warnMsg+="\n  '";
-          warnMsg+=substitute(replaceAnonymousScopes(md->declaration()),"%","%%");
+          warnMsg+=replaceAnonymousScopes(md->declaration());
           warnMsg+="' " + warn_line(md->getDefFileName(),md->getDefLine());
         }
       }
-      warn(root->fileName,root->startLine, "%s", qPrint(warnMsg));
+      warn(root->fileName,root->startLine, "{}", qPrint(warnMsg));
     }
   }
   else // got docs for an undefined member!
@@ -5917,7 +5910,7 @@ static bool findGlobalMember(const Entry *root,
        )
     {
       warn(root->fileName,root->startLine,
-           "documented symbol '%s' was not declared or defined.",qPrint(decl)
+           "documented symbol '{}' was not declared or defined.",qPrint(decl)
           );
     }
   }
@@ -6473,7 +6466,7 @@ static void addMemberFunction(const Entry *root,
         }
       }
     }
-    warn(root->fileName,root->startLine,"%s",qPrint(warnMsg));
+    warn(root->fileName,root->startLine,"{}",warnMsg);
   }
 }
 
@@ -7002,8 +6995,8 @@ static void findMember(const Entry *root,
           QCString fullFuncDecl=funcDecl;
           if (isFunc) fullFuncDecl+=argListToString(root->argList,TRUE);
           warn(root->fileName,root->startLine,
-               "Cannot determine class for function\n%s",
-               qPrint(fullFuncDecl)
+               "Cannot determine class for function\n{}",
+               fullFuncDecl
               );
         }
       }
@@ -7228,8 +7221,8 @@ static void findMember(const Entry *root,
               QCString fullFuncDecl=funcDecl;
               if (isFunc) fullFuncDecl+=argListToString(root->argList,TRUE);
               warn(root->fileName,root->startLine,
-                  "Cannot determine file/namespace for relatedalso function\n%s",
-                  qPrint(fullFuncDecl)
+                  "Cannot determine file/namespace for relatedalso function\n{}",
+                  fullFuncDecl
                   );
             }
           }
@@ -7237,11 +7230,7 @@ static void findMember(const Entry *root,
       }
       else
       {
-        warn_undoc(root->fileName,root->startLine,
-                   "class '%s' for related function '%s' is not "
-                   "documented.",
-                   qPrint(className),qPrint(funcName)
-                  );
+        warn_undoc(root->fileName,root->startLine, "class '{}' for related function '{}' is not documented.", className,funcName);
       }
     }
     else if (root->parent() && root->parent()->section.isObjcImpl())
@@ -7253,24 +7242,20 @@ static void findMember(const Entry *root,
       bool globMem = findGlobalMember(root,namespaceName,funcType,funcName,funcTempList,funcArgs,funcDecl,spec);
       if (className.isEmpty() && !globMem)
       {
-        warn(root->fileName,root->startLine,
-             "class for member '%s' cannot "
-             "be found.", qPrint(funcName)
-            );
+        warn(root->fileName,root->startLine, "class for member '{}' cannot be found.", funcName);
       }
       else if (!className.isEmpty() && !globMem)
       {
         warn(root->fileName,root->startLine,
-             "member '%s' of class '%s' cannot be found",
-             qPrint(funcName),qPrint(className));
+             "member '{}' of class '{}' cannot be found",
+             funcName,className);
       }
     }
   }
   else
   {
     // this should not be called
-    warn(root->fileName,root->startLine,
-         "member with no name found.");
+    warn(root->fileName,root->startLine,"member with no name found.");
   }
   return;
 }
@@ -7470,7 +7455,7 @@ static void findObjCMethodDefinitions(const Entry *root)
       {
         if (objCMethod->section.isFunction())
         {
-          //Printf("  Found ObjC method definition %s\n",qPrint(objCMethod->name));
+          //printf("  Found ObjC method definition %s\n",qPrint(objCMethod->name));
           findMember(objCMethod.get(),
                      objCMethod->relates,
                      objCMethod->type,
@@ -7766,6 +7751,7 @@ static void addEnumValuesToEnums(const Entry *root)
               bool isJavaLike = sle==SrcLangExt::CSharp || sle==SrcLangExt::Java || sle==SrcLangExt::XML;
               if ( isJavaLike || root->spec.isStrong())
               {
+                if (sle == SrcLangExt::Cpp && e->section.isDefine()) continue;
                 // Unlike classic C/C++ enums, for C++11, C# & Java enum
                 // values are only visible inside the enum scope, so we must create
                 // them here and only add them to the enum
@@ -7973,8 +7959,8 @@ static bool tryAddEnumDocsToGroupMember(const Entry *root,const QCString &name)
     else if (!gd && g.pri == Grouping::GROUPING_INGROUP)
     {
       warn(root->fileName, root->startLine,
-          "Found non-existing group '%s' for the command '%s', ignoring command",
-          qPrint(g.groupname), Grouping::getGroupPriName( g.pri )
+          "Found non-existing group '{}' for the command '{}', ignoring command",
+          g.groupname, Grouping::getGroupPriName( g.pri )
           );
     }
   }
@@ -8062,10 +8048,7 @@ static void findEnumDocumentation(const Entry *root)
       }
       if (!found)
       {
-        warn(root->fileName,root->startLine,
-             "Documentation for undefined enum '%s' found.",
-             qPrint(name)
-            );
+        warn(root->fileName,root->startLine, "Documentation for undefined enum '{}' found.", name);
       }
     }
   }
@@ -8117,7 +8100,7 @@ static void addMembersToIndex()
   for (const auto &mn : *Doxygen::memberNameLinkedMap)
   {
     // for each member name
-    msg("%s", "Adding memberNameLinkedMap entries ...\n");
+    msg("{}", "Adding memberNameLinkedMap entries ...\n");
     fflush(stdout);
     if (mn)
     {
@@ -8139,7 +8122,7 @@ static void addMembersToIndex()
   
   if (Doxygen::functionNameLinkedMap)
   {
-  msg("%s", "Adding functionNameLinkedMap entries ...\n");
+  msg("{}", "Adding functionNameLinkedMap entries ...\n");
   fflush(stdout);
   // for each file/namespace function name
   for (const auto &mn : *Doxygen::functionNameLinkedMap)
@@ -8168,11 +8151,11 @@ static void addMembersToIndex()
     }
   }
   }
-  msg("%s", "Calling sortMemberIndexLists() ...\n");
+  msg("{}", "Calling sortMemberIndexLists() ...\n");
   fflush(stdout);
 
   index.sortMemberIndexLists();
-  msg("%s", "Finished sortMemberIndexLists() ...\n");
+  msg("{}", "Finished sortMemberIndexLists() ...\n");
   fflush(stdout);
 }
 
@@ -8565,14 +8548,14 @@ static void generateFileSources()
     bool parseSources = !fd->isReference() && Doxygen::parseSourcesNeeded; // we needed to parse the sources even if we do not show them
     if (showSources)
     {
-      msg("Generating code for file %s...\n",qPrint(fd->docName()));
+      msg("Generating code for file {}...\n",fd->docName());
       fd->writeSourceHeader(ol);
       fd->writeSourceBody(ol,parser);
       fd->writeSourceFooter(ol);
     }
     else if (parseSources)
     {
-      msg("Parsing code for file %s...\n",qPrint(fd->docName()));
+      msg("Parsing code for file {}...\n",fd->docName());
       fd->parseSource(parser);
     }
   };
@@ -8657,11 +8640,11 @@ static void generateFileSources()
       {
         numThreads = std::thread::hardware_concurrency();
         msg("Generating code files: NUM_PROC_THREADS == 0: --> "
-            "std::thread::hardware_concurrency() said: %zu threads are usable ...\n", numThreads);
+            "std::thread::hardware_concurrency() said: {} threads are usable ...\n", numThreads);
       }
       if (numThreads>1)
       {
-        msg("Generating code files using %zu threads.\n",numThreads);
+        msg("Generating code files using {} threads.\n",numThreads);
         struct SourceContext
         {
           SourceContext(FileDef *fd_,bool gen_,const OutputList &ol_)
@@ -8682,11 +8665,11 @@ static void generateFileSources()
             {
               if (ctx->generateSourceFile)
               {
-                msg("Generating code for file %s...\n",qPrint(ctx->fd->docName()));
+                msg("Generating code for file {}...\n",ctx->fd->docName());
               }
               else
               {
-                msg("Parsing code for file %s...\n",qPrint(ctx->fd->docName()));
+                msg("Parsing code for file {}...\n",ctx->fd->docName());
               }
               StringVector filesInSameTu;
               ctx->fd->getAllIncludeFilesRecursively(filesInSameTu);
@@ -8756,7 +8739,7 @@ static void generateFileDocs()
           {
             auto ctx = std::make_shared<DocContext>(fd.get(),*g_outputList);
             auto processFile = [ctx]() {
-              msg("Generating docs for file %s...\n",qPrint(ctx->fd->docName()));
+              msg("Generating docs for file {}...\n",ctx->fd->docName());
               ctx->fd->writeDocumentation(ctx->ol);
               return ctx;
             };
@@ -8778,7 +8761,7 @@ static void generateFileDocs()
           bool doc = fd->isLinkableInProject();
           if (doc)
           {
-            msg("Generating docs for file %s...\n",qPrint(fd->docName()));
+            msg("Generating docs for file {}...\n",fd->docName());
             fd->writeDocumentation(*g_outputList);
           }
         }
@@ -9082,7 +9065,7 @@ static void generateDocsForClassList(const std::vector<ClassDefMutable*> &classL
         auto ctx = std::make_shared<DocContext>(cd,*g_outputList);
         auto processFile = [ctx]()
         {
-          msg("Generating docs for compound %s...\n",qPrint(ctx->cd->displayName()));
+          msg("Generating docs for compound {}...\n",ctx->cd->displayName());
 
           // skip external references, anonymous compounds and
           // template instances
@@ -9120,7 +9103,7 @@ static void generateDocsForClassList(const std::vector<ClassDefMutable*> &classL
         if ( !cd->isHidden() && !cd->isEmbeddedInOuterScope() &&
               cd->isLinkableInProject() && !cd->isImplicitTemplateInstance())
         {
-          msg("Generating docs for compound %s...\n",qPrint(cd->displayName()));
+          msg("Generating docs for compound {}...\n",cd->displayName());
 
           cd->writeDocumentation(*g_outputList);
           cd->writeMemberList(*g_outputList);
@@ -9194,7 +9177,7 @@ static void generateConceptDocs()
         ) && !cd->isHidden() && cd->isLinkableInProject()
        )
     {
-      msg("Generating docs for concept %s...\n",qPrint(cd->displayName()));
+      msg("Generating docs for concept {}...\n",cd->displayName());
       cd->writeDocumentation(*g_outputList);
     }
   }
@@ -9620,10 +9603,10 @@ static void findDefineDocumentation(Entry *root)
             }
           }
         }
-        //warn("define %s found in the following files:\n",qPrint(root->name));
+        //warn("define {} found in the following files:\n",root->name);
         //warn("Cannot determine where to add the documentation found "
-        //     "at line %d of file %s. \n",
-        //     root->startLine,qPrint(root->fileName));
+        //     "at line {} of file {}. \n",
+        //     root->startLine,root->fileName);
       }
     }
     else if (!root->doc.isEmpty() || !root->brief.isEmpty()) // define not found
@@ -9631,18 +9614,11 @@ static void findDefineDocumentation(Entry *root)
       bool preEnabled = Config_getBool(ENABLE_PREPROCESSING);
       if (preEnabled)
       {
-        warn(root->fileName,root->startLine,
-             "documentation for unknown define %s found.",
-             qPrint(root->name)
-            );
+        warn(root->fileName,root->startLine,"documentation for unknown define {} found.",root->name);
       }
       else
       {
-        warn(root->fileName,root->startLine,
-             "found documented #define %s but ignoring it because "
-             "ENABLE_PREPROCESSING is NO.",
-             qPrint(root->name)
-            );
+        warn(root->fileName,root->startLine, "found documented #define {} but ignoring it because ENABLE_PREPROCESSING is NO.", root->name);
       }
     }
   }
@@ -9681,9 +9657,9 @@ static void findDirDocumentation(const Entry *root)
         {
            warn(root->fileName,root->startLine,
              "\\dir command matches multiple directories.\n"
-             "  Applying the command for directory %s\n"
-             "  Ignoring the command for directory %s",
-             qPrint(matchingDir->name()),qPrint(dir->name())
+             "  Applying the command for directory {}\n"
+             "  Ignoring the command for directory {}",
+             matchingDir->name(),dir->name()
            );
         }
         else
@@ -9703,8 +9679,7 @@ static void findDirDocumentation(const Entry *root)
     }
     else
     {
-      warn(root->fileName,root->startLine,"No matching "
-          "directory found for command \\dir %s",qPrint(normalizedName));
+      warn(root->fileName,root->startLine,"No matching directory found for command \\dir {}",normalizedName);
     }
   }
   for (const auto &e : root->children()) findDirDocumentation(e.get());
@@ -9778,13 +9753,13 @@ static void findMainPage(Entry *root)
         }
         else if (si->lineNr() != -1)
         {
-          warn(root->fileName,root->startLine,"multiple use of section label '%s' for main page, (first occurrence: %s, line %d)",
-               qPrint(Doxygen::mainPage->name()),qPrint(si->fileName()),si->lineNr());
+          warn(root->fileName,root->startLine,"multiple use of section label '{}' for main page, (first occurrence: {}, line {})",
+               Doxygen::mainPage->name(),si->fileName(),si->lineNr());
         }
         else
         {
-          warn(root->fileName,root->startLine,"multiple use of section label '%s' for main page, (first occurrence: %s)",
-               qPrint(Doxygen::mainPage->name()),qPrint(si->fileName()));
+          warn(root->fileName,root->startLine,"multiple use of section label '{}' for main page, (first occurrence: {})",
+               Doxygen::mainPage->name(),si->fileName());
         }
       }
       else
@@ -9803,8 +9778,8 @@ static void findMainPage(Entry *root)
     else if (root->tagInfo()==nullptr)
     {
       warn(root->fileName,root->startLine,
-           "found more than one \\mainpage comment block! (first occurrence: %s, line %d), Skipping current block!",
-           qPrint(Doxygen::mainPage->docFile()),Doxygen::mainPage->getStartBodyLine());
+           "found more than one \\mainpage comment block! (first occurrence: {}, line {}), Skipping current block!",
+           Doxygen::mainPage->docFile(),Doxygen::mainPage->getStartBodyLine());
     }
   }
   for (const auto &e : root->children()) findMainPage(e.get());
@@ -9837,9 +9812,9 @@ static void computePageRelations(Entry *root)
         PageDef *subPd = Doxygen::pageLinkedMap->find(bi.name);
         if (pd==subPd)
         {
-         term("page defined %s with label %s is a direct "
+         term("page defined {} with label {} is a direct "
              "subpage of itself! Please remove this cyclic dependency.\n",
-              qPrint(warn_line(pd->docFile(),pd->docLine())),qPrint(pd->name()));
+              warn_line(pd->docFile(),pd->docLine()),pd->name());
         }
         else if (subPd)
         {
@@ -9862,9 +9837,9 @@ static void checkPageRelations()
     {
       if (ppd==pd.get())
       {
-        term("page defined %s with label %s is a subpage "
+        term("page defined {} with label {} is a subpage "
              "of itself! Please remove this cyclic dependency.\n",
-              qPrint(warn_line(pd->docFile(),pd->docLine())),qPrint(pd->name()));
+              warn_line(pd->docFile(),pd->docLine()),pd->name());
       }
       ppd=ppd->getOuterScope();
     }
@@ -9949,7 +9924,7 @@ static void generatePageDocs()
   {
     if (!pd->getGroupDef() && !pd->isReference())
     {
-      msg("Generating docs for page %s...\n",qPrint(pd->name()));
+      msg("Generating docs for page {}...\n",pd->name());
       pd->writeDocumentation(*g_outputList);
     }
   }
@@ -9964,11 +9939,7 @@ static void buildExampleList(Entry *root)
   {
     if (Doxygen::exampleLinkedMap->find(root->name))
     {
-      warn(root->fileName,root->startLine,
-          "Example %s was already documented. Ignoring "
-          "documentation found here.",
-          qPrint(root->name)
-          );
+      warn(root->fileName,root->startLine,"Example {} was already documented. Ignoring documentation found here.",root->name);
     }
     else
     {
@@ -9997,12 +9968,12 @@ void printNavTree(Entry *root,int indent)
   {
     QCString indentStr;
     indentStr.fill(' ',indent);
-    Debug::print(Debug::Entries,0,"%s%s at %s:%d (sec=%s, spec=%s)\n",
-        indentStr.isEmpty()?"":qPrint(indentStr),
-        root->name.isEmpty()?"<empty>":qPrint(root->name),
-        qPrint(root->fileName),root->startLine,
-        root->section.to_string().c_str(),
-        root->spec.to_string().c_str());
+    Debug::print(Debug::Entries,0,"{}{} at {}:{} (sec={}, spec={})\n",
+        indentStr.isEmpty()?"":indentStr,
+        root->name.isEmpty()?"<empty>":root->name,
+        root->fileName,root->startLine,
+        root->section.to_string(),
+        root->spec.to_string());
     for (const auto &e : root->children())
     {
       printNavTree(e.get(),indent+2);
@@ -10020,9 +9991,8 @@ void printSectionsTree()
   {
     for (const auto &si : SectionManager::instance())
     {
-      Debug::print(Debug::Sections,0,"Section = %s, file = %s, title = %s, type = %d, ref = %s\n",
-            qPrint(si->label()),qPrint(si->fileName()),qPrint(si->title()),
-            si->type(),qPrint(si->ref()));
+      Debug::print(Debug::Sections,0,"Section = {}, file = {}, title = {}, type = {}, ref = {}\n",
+            si->label(),si->fileName(),si->title(),si->type().level(),si->ref());
     }
   }
 }
@@ -10036,7 +10006,7 @@ static void generateExampleDocs()
   g_outputList->disable(OutputType::Man);
   for (const auto &pd : *Doxygen::exampleLinkedMap)
   {
-    msg("Generating docs for example %s...\n",qPrint(pd->name()));
+    msg("Generating docs for example {}...\n",pd->name());
     SrcLangExt lang = getLanguageFromFileName(pd->name(), SrcLangExt::Unknown);
     if (lang != SrcLangExt::Unknown)
     {
@@ -10120,7 +10090,7 @@ static void generateNamespaceClassDocs(const ClassLinkedRefMap &classList)
               && !ctx->cdm->isHidden() && !ctx->cdm->isEmbeddedInOuterScope()
              )
           {
-            msg("Generating docs for compound %s...\n",qPrint(ctx->cdm->displayName()));
+            msg("Generating docs for compound {}...\n",ctx->cdm->displayName());
             ctx->cdm->writeDocumentation(ctx->ol);
             ctx->cdm->writeMemberList(ctx->ol);
           }
@@ -10151,7 +10121,7 @@ static void generateNamespaceClassDocs(const ClassLinkedRefMap &classList)
             && !cd->isHidden() && !cd->isEmbeddedInOuterScope()
            )
         {
-          msg("Generating docs for compound %s...\n",qPrint(cd->displayName()));
+          msg("Generating docs for compound {}...\n",cd->displayName());
 
           cdm->writeDocumentation(*g_outputList);
           cdm->writeMemberList(*g_outputList);
@@ -10170,7 +10140,7 @@ static void generateNamespaceConceptDocs(const ConceptLinkedRefMap &conceptList)
     ConceptDefMutable *cdm = toConceptDefMutable(cd);
     if ( cdm && cd->isLinkableInProject() && !cd->isHidden())
     {
-      msg("Generating docs for concept %s...\n",qPrint(cd->name()));
+      msg("Generating docs for concept {}...\n",cd->name());
       cdm->writeDocumentation(*g_outputList);
     }
   }
@@ -10190,7 +10160,7 @@ static void generateNamespaceDocs()
       NamespaceDefMutable *ndm = toNamespaceDefMutable(nd.get());
       if (ndm)
       {
-        msg("Generating docs for namespace %s\n",qPrint(nd->displayName()));
+        msg("Generating docs for namespace {}\n",nd->displayName());
         ndm->writeDocumentation(*g_outputList);
       }
     }
@@ -10213,7 +10183,7 @@ static void runHtmlHelpCompiler()
   Portable::setShortDir();
   if (Portable::system(Config_getString(HHC_LOCATION).data(), qPrint(HtmlHelp::hhpFileName), Debug::isFlagSet(Debug::ExtCmd))!=1)
   {
-    err("failed to run html help compiler on %s\n", qPrint(HtmlHelp::hhpFileName));
+    err("failed to run html help compiler on {}\n", HtmlHelp::hhpFileName);
   }
   Dir::setCurrent(oldDir);
 }
@@ -10229,11 +10199,11 @@ static void runQHelpGenerator()
   {
     // run qhelpgenerator -v and extract the Qt version used
     QCString cmd=qhgLocation+ " -v 2>&1";
-    Debug::print(Debug::ExtCmd,0,"Executing popen(`%s`)\n",qPrint(cmd));
+    Debug::print(Debug::ExtCmd,0,"Executing popen(`{}`)\n",cmd);
     FILE *f=Portable::popen(cmd,"r");
     if (!f)
     {
-      err("could not execute %s\n",qPrint(qhgLocation));
+      err("could not execute {}\n",qhgLocation);
     }
     else
     {
@@ -10241,7 +10211,7 @@ static void runQHelpGenerator()
       char inBuf[bufSize+1];
       size_t numRead=fread(inBuf,1,bufSize,f);
       inBuf[numRead] = '\0';
-      Debug::print(Debug::Qhp,0,inBuf);
+      Debug::print(Debug::Qhp,0,"{}",inBuf);
       Portable::pclose(f);
 
       int qtVersion=0;
@@ -10259,11 +10229,11 @@ static void runQHelpGenerator()
         // dump the output of qhelpgenerator -c file.qhp
         // Qt<6 or Qt>=6.2.5 or higher, see https://bugreports.qt.io/browse/QTBUG-101070
         cmd=qhgLocation+ " -c " + Qhp::qhpFileName + " 2>&1";
-        Debug::print(Debug::ExtCmd,0,"Executing popen(`%s`)\n",qPrint(cmd));
+        Debug::print(Debug::ExtCmd,0,"Executing popen(`{}`)\n",cmd);
         f=Portable::popen(cmd,"r");
         if (!f)
         {
-          err("could not execute %s\n",qPrint(qhgLocation));
+          err("could not execute {}\n",qhgLocation);
         }
         else
         {
@@ -10274,7 +10244,7 @@ static void runQHelpGenerator()
             output += inBuf;
           }
           Portable::pclose(f);
-          Debug::print(Debug::Qhp,0,output.c_str());
+          Debug::print(Debug::Qhp,0,"{}",output);
         }
       }
     }
@@ -10282,7 +10252,7 @@ static void runQHelpGenerator()
 
   if (Portable::system(qhgLocation, args, FALSE))
   {
-    err("failed to run qhelpgenerator on %s\n",qPrint(Qhp::qhpFileName));
+    err("failed to run qhelpgenerator on {}\n",Qhp::qhpFileName);
   }
   Dir::setCurrent(oldDir);
 }
@@ -10302,7 +10272,7 @@ static void computeVerifiedDotPath()
       FileInfo dp(dotPath.str());
       if (!dp.exists() || !dp.isFile())
       {
-        warn_uncond("the dot tool could not be found as '%s'\n",qPrint(dotPath));
+        warn_uncond("the dot tool could not be found as '{}'\n",dotPath);
         dotPath = "dot";
         dotPath += Portable::commandExtension();
       }
@@ -10341,23 +10311,23 @@ static void generateConfigFile(const QCString &configFile,bool shortList,
     {
       if (!updateOnly)
       {
-        msg("\n\nConfiguration file '%s' created.\n\n",qPrint(configFile));
+        msg("\n\nConfiguration file '{}' created.\n\n",configFile);
         msg("Now edit the configuration file and enter\n\n");
         if (configFile!="Doxyfile" && configFile!="doxyfile")
-          msg("  doxygen %s\n\n",qPrint(configFile));
+          msg("  doxygen {}\n\n",configFile);
         else
           msg("  doxygen\n\n");
         msg("to generate the documentation for your project\n\n");
       }
       else
       {
-        msg("\n\nConfiguration file '%s' updated.\n\n",qPrint(configFile));
+        msg("\n\nConfiguration file '{}' updated.\n\n",configFile);
       }
     }
   }
   else
   {
-    term("Cannot open file %s for writing\n",qPrint(configFile));
+    term("Cannot open file {} for writing\n",configFile);
   }
 }
 
@@ -10399,8 +10369,7 @@ static void readTagFile(const std::shared_ptr<Entry> &root,const QCString &tagLi
   FileInfo fi(fileName.str());
   if (!fi.exists() || !fi.isFile())
   {
-    err("Tag file '%s' does not exist or is not a file. Skipping it...\n",
-        qPrint(fileName));
+    err("Tag file '{}' does not exist or is not a file. Skipping it...\n",fileName);
     return;
   }
 
@@ -10411,10 +10380,12 @@ static void readTagFile(const std::shared_ptr<Entry> &root,const QCString &tagLi
   if (!destName.isEmpty())
   {
     Doxygen::tagDestinationMap.emplace(fi.absFilePath(), destName.str());
-    msg("Reading tag file '%s', location '%s'...\n",qPrint(fileName),qPrint(destName));
+    msg("Reading tag file '{}', location '{}'...\n",fileName,destName);
   }
   else
-    msg("Reading tag file '%s'...\n",qPrint(fileName));
+  {
+    msg("Reading tag file '{}'...\n",fileName);
+  }
 
   parseTagFile(root,fi.absFilePath().c_str());
 }
@@ -10431,11 +10402,11 @@ static void copyLatexStyleSheet()
       FileInfo fi(fileName);
       if (!fi.exists())
       {
-        err("Style sheet '%s' specified by LATEX_EXTRA_STYLESHEET does not exist!\n",qPrint(fileName));
+        err("Style sheet '{}' specified by LATEX_EXTRA_STYLESHEET does not exist!\n",fileName);
       }
       else if (fi.isDir())
       {
-        err("Style sheet '%s' specified by LATEX_EXTRA_STYLESHEET is a directory, it has to be a file!\n", qPrint(fileName));
+        err("Style sheet '{}' specified by LATEX_EXTRA_STYLESHEET is a directory, it has to be a file!\n", fileName);
       }
       else
       {
@@ -10461,12 +10432,12 @@ static void copyStyleSheet()
       FileInfo fi(htmlStyleSheet.str());
       if (!fi.exists())
       {
-        err("Style sheet '%s' specified by HTML_STYLESHEET does not exist!\n",qPrint(htmlStyleSheet));
+        err("Style sheet '{}' specified by HTML_STYLESHEET does not exist!\n",htmlStyleSheet);
         htmlStyleSheet = Config_updateString(HTML_STYLESHEET,""); // revert to the default
       }
       else if (fi.isDir())
       {
-        err("Style sheet '%s' specified by HTML_STYLESHEET is a directory, it has to be a file!\n",qPrint(htmlStyleSheet));
+        err("Style sheet '{}' specified by HTML_STYLESHEET is a directory, it has to be a file!\n",htmlStyleSheet);
         htmlStyleSheet = Config_updateString(HTML_STYLESHEET,""); // revert to the default
       }
       else
@@ -10485,15 +10456,15 @@ static void copyStyleSheet()
       FileInfo fi(fileName.str());
       if (!fi.exists())
       {
-        err("Style sheet '%s' specified by HTML_EXTRA_STYLESHEET does not exist!\n",qPrint(fileName));
+        err("Style sheet '{}' specified by HTML_EXTRA_STYLESHEET does not exist!\n",fileName);
       }
       else if (fi.fileName()=="doxygen.css" || fi.fileName()=="tabs.css" || fi.fileName()=="navtree.css")
       {
-        err("Style sheet %s specified by HTML_EXTRA_STYLESHEET is already a built-in stylesheet. Please use a different name\n",qPrint(fi.fileName()));
+        err("Style sheet '{}' specified by HTML_EXTRA_STYLESHEET is already a built-in stylesheet. Please use a different name\n",fi.fileName());
       }
       else if (fi.isDir())
       {
-        err("Style sheet '%s' specified by HTML_EXTRA_STYLESHEET is a directory, it has to be a file!\n",qPrint(fileName));
+        err("Style sheet '{}' specified by HTML_EXTRA_STYLESHEET is a directory, it has to be a file!\n",fileName);
       }
       else
       {
@@ -10512,12 +10483,12 @@ static void copyLogo(const QCString &outputOption)
     FileInfo fi(projectLogo.str());
     if (!fi.exists())
     {
-      err("Project logo '%s' specified by PROJECT_LOGO does not exist!\n",qPrint(projectLogo));
+      err("Project logo '{}' specified by PROJECT_LOGO does not exist!\n",projectLogo);
       projectLogo = Config_updateString(PROJECT_LOGO,""); // revert to the default
     }
     else if (fi.isDir())
     {
-      err("Project logo '%s' specified by PROJECT_LOGO is a directory, it has to be a file!\n",qPrint(projectLogo));
+      err("Project logo '{}' specified by PROJECT_LOGO is a directory, it has to be a file!\n",projectLogo);
       projectLogo = Config_updateString(PROJECT_LOGO,""); // revert to the default
     }
     else
@@ -10537,12 +10508,12 @@ static void copyIcon(const QCString &outputOption)
     FileInfo fi(projectIcon.str());
     if (!fi.exists())
     {
-      err("Project icon '%s' specified by PROJECT_ICON does not exist!\n",qPrint(projectIcon));
+      err("Project icon '{}' specified by PROJECT_ICON does not exist!\n",projectIcon);
       projectIcon = Config_updateString(PROJECT_ICON,""); // revert to the default
     }
     else if (fi.isDir())
     {
-      err("Project icon '%s' specified by PROJECT_ICON is a directory, it has to be a file!\n",qPrint(projectIcon));
+      err("Project icon '{}' specified by PROJECT_ICON is a directory, it has to be a file!\n",projectIcon);
       projectIcon = Config_updateString(PROJECT_ICON,""); // revert to the default
     }
     else
@@ -10563,11 +10534,11 @@ static void copyExtraFiles(const StringVector &files,const QCString &filesOption
       FileInfo fi(fileName);
       if (!fi.exists())
       {
-        err("Extra file '%s' specified in %s does not exist!\n", fileName.c_str(),qPrint(filesOption));
+        err("Extra file '{}' specified in {} does not exist!\n", fileName,filesOption);
       }
       else if (fi.isDir())
       {
-        err("Extra file '%s' specified in %s is a directory, it has to be a file!\n", fileName.c_str(),qPrint(filesOption));
+        err("Extra file '{}' specified in {} is a directory, it has to be a file!\n", fileName,filesOption);
       }
       else
       {
@@ -10707,14 +10678,14 @@ static std::shared_ptr<Entry> parseFile(OutlineParserInterface &parser,
       preprocessor.addSearchDir(absPath.c_str());
     }
     std::string inBuf;
-    msg("Preprocessing %s...\n",qPrint(fn));
+    msg("Preprocessing {}...\n",fn);
     readInputFile(fileName,inBuf);
     addTerminalCharIfMissing(inBuf,'\n');
     preprocessor.processFile(fileName,inBuf,preBuf);
   }
   else // no preprocessing
   {
-    msg("Reading %s...\n",qPrint(fn));
+    msg("Reading {}...\n",fn);
     readInputFile(fileName,preBuf);
     addTerminalCharIfMissing(preBuf,'\n');
   }
@@ -10762,9 +10733,9 @@ static void parseFilesMultiThreading(const std::shared_ptr<Entry> &root)
     {
       numThreads = std::thread::hardware_concurrency();
       msg("parseFilesMultiThreading(): NUM_PROC_THREADS == 0: --> "
-        "std::thread::hardware_concurrency() said: %zu threads are usable ...\n", numThreads);
+        "std::thread::hardware_concurrency() said: {} threads are usable ...\n", numThreads);
     }
-    msg("Processing input using %zu threads.\n",numThreads);
+    msg("Processing input using {} threads.\n",numThreads);
     ThreadPool threadPool(numThreads);
     using FutureType = std::vector< std::shared_ptr<Entry> >;
     std::vector< std::future< FutureType > > results;
@@ -10791,7 +10762,7 @@ static void parseFilesMultiThreading(const std::shared_ptr<Entry> &root)
           }
           else
           {
-            msg("ERROR: Got no parser for file '%s'\n", (s.c_str() ? s.c_str() : ""));
+            msg("ERROR: Got no parser for file '{}'\n", (s.c_str() ? s.c_str() : ""));
             fflush(stdout);
             fflush(stderr);
           }
@@ -10821,7 +10792,7 @@ static void parseFilesMultiThreading(const std::shared_ptr<Entry> &root)
                   }
                   else
                   {
-                    msg("ERROR: Got no parser for file '%s'\n", (incFile.c_str() ? incFile.c_str() : ""));
+                    msg("ERROR: Got no parser for file '{}'\n", (incFile.c_str() ? incFile.c_str() : ""));
                     fflush(stdout);
                     fflush(stderr);
                   }
@@ -10887,7 +10858,7 @@ static void parseFilesMultiThreading(const std::shared_ptr<Entry> &root)
 #endif
   {
     std::size_t numThreads = static_cast<std::size_t>(Config_getInt(NUM_PROC_THREADS));
-    msg("Processing input using %zu threads.\n",numThreads);
+    msg("Processing input using {} threads.\n",numThreads);
     ThreadPool threadPool(numThreads);
     using FutureType = std::shared_ptr<Entry>;
     std::vector< std::future< FutureType > > results;
@@ -11140,7 +11111,7 @@ static void readDir(FileInfo *fi,
   g_pathsVisited.insert(dirName);
 
   Dir dir(dirName);
-  msg("Searching for files in directory %s\n", qPrint(fi->absFilePath()));
+  msg("Searching for files in directory {}\n", fi->absFilePath());
   //printf("killSet=%p count=%d\n",killSet,killSet ? (int)killSet->count() : -1);
 
   StringVector dirResultList;
@@ -11158,7 +11129,7 @@ static void readDir(FileInfo *fi,
       {
         if (errorIfNotExist)
         {
-          warn_uncond("source '%s' is not a readable file or directory... skipping.\n",cfi.absFilePath().c_str());
+          warn_uncond("source '{}' is not a readable file or directory... skipping.\n",cfi.absFilePath());
         }
       }
       else if (cfi.isFile() &&
@@ -11244,7 +11215,7 @@ void readFileOrDirectory(const QCString &s,
       {
         if (errorIfNotExist)
         {
-          warn_uncond("source '%s' is not a readable file or directory... skipping.\n",qPrint(s));
+          warn_uncond("source '{}' is not a readable file or directory... skipping.\n",s);
         }
       }
       else if (fi.isFile())
@@ -11354,7 +11325,7 @@ static void version(const bool extended)
 {
   Debug::clearFlag(Debug::Time);
   QCString versionString = getFullVersion();
-  msg("%s\n",qPrint(versionString));
+  msg("{}\n",versionString);
   if (extended)
   {
     QCString extVers;
@@ -11370,7 +11341,7 @@ static void version(const bool extended)
     {
       int lastComma = extVers.findRev(',');
       if (lastComma != -1) extVers = extVers.replace(lastComma,1," and");
-      msg("    with %s.\n",qPrint(extVers));
+      msg("    with {}.\n",extVers);
     }
   }
 }
@@ -11381,42 +11352,42 @@ static void version(const bool extended)
 static void usage(const QCString &name,const QCString &versionString)
 {
   Debug::clearFlag(Debug::Time);
-  msg("Doxygen version %s\nCopyright Dimitri van Heesch 1997-2025\n\n",qPrint(versionString));
-  msg("You can use Doxygen in a number of ways:\n\n");
-  msg("1) Use Doxygen to generate a template configuration file*:\n");
-  msg("    %s [-s] -g [configName]\n\n",qPrint(name));
-  msg("2) Use Doxygen to update an old configuration file*:\n");
-  msg("    %s [-s] -u [configName]\n\n",qPrint(name));
-  msg("3) Use Doxygen to generate documentation using an existing ");
-  msg("configuration file*:\n");
-  msg("    %s [configName]\n\n",qPrint(name));
-  msg("4) Use Doxygen to generate a template file controlling the layout of the\n");
-  msg("   generated documentation:\n");
-  msg("    %s -l [layoutFileName]\n\n",qPrint(name));
-  msg("    In case layoutFileName is omitted DoxygenLayout.xml will be used as filename.\n");
-  msg("    If - is used for layoutFileName Doxygen will write to standard output.\n\n");
-  msg("5) Use Doxygen to generate a template style sheet file for RTF, HTML or Latex.\n");
-  msg("    RTF:        %s -w rtf styleSheetFile\n",qPrint(name));
-  msg("    HTML:       %s -w html headerFile footerFile styleSheetFile [configFile]\n",qPrint(name));
-  msg("    LaTeX:      %s -w latex headerFile footerFile styleSheetFile [configFile]\n\n",qPrint(name));
-  msg("6) Use Doxygen to generate a rtf extensions file\n");
-  msg("    %s -e rtf extensionsFile\n\n",qPrint(name));
-  msg("    If - is used for extensionsFile Doxygen will write to standard output.\n\n");
-  msg("7) Use Doxygen to compare the used configuration file with the template configuration file\n");
-  msg("    %s -x [configFile]\n\n",qPrint(name));
-  msg("   Use Doxygen to compare the used configuration file with the template configuration file\n");
-  msg("   without replacing the environment variables or CMake type replacement variables\n");
-  msg("    %s -x_noenv [configFile]\n\n",qPrint(name));
-  msg("8) Use Doxygen to show a list of built-in emojis.\n");
-  msg("    %s -f emoji outputFileName\n\n",qPrint(name));
-  msg("    If - is used for outputFileName Doxygen will write to standard output.\n\n");
-  msg("*) If -s is specified the comments of the configuration items in the config file will be omitted.\n");
-  msg("   If configName is omitted 'Doxyfile' will be used as a default.\n");
-  msg("   If - is used for configFile Doxygen will write / read the configuration to /from standard output / input.\n\n");
-  msg("If -q is used for a Doxygen documentation run, Doxygen will see this as if QUIET=YES has been set.\n\n");
-  msg("-v print version string, -V print extended version information\n");
-  msg("-h,-? prints usage help information\n");
-  msg("%s -d prints additional usage flags for debugging purposes\n",qPrint(name));
+  msg("Doxygen version {0}\nCopyright Dimitri van Heesch 1997-2025\n\n"
+      "You can use Doxygen in a number of ways:\n\n"
+      "1) Use Doxygen to generate a template configuration file*:\n"
+      "    {1} [-s] -g [configName]\n\n"
+      "2) Use Doxygen to update an old configuration file*:\n"
+      "    {1} [-s] -u [configName]\n\n"
+      "3) Use Doxygen to generate documentation using an existing "
+      "configuration file*:\n"
+      "    {1} [configName]\n\n"
+      "4) Use Doxygen to generate a template file controlling the layout of the\n"
+      "   generated documentation:\n"
+      "    {1} -l [layoutFileName]\n\n"
+      "    In case layoutFileName is omitted DoxygenLayout.xml will be used as filename.\n"
+      "    If - is used for layoutFileName Doxygen will write to standard output.\n\n"
+      "5) Use Doxygen to generate a template style sheet file for RTF, HTML or Latex.\n"
+      "    RTF:        {1} -w rtf styleSheetFile\n"
+      "    HTML:       {1}-w html headerFile footerFile styleSheetFile [configFile]\n"
+      "    LaTeX:      {1} -w latex headerFile footerFile styleSheetFile [configFile]\n\n"
+      "6) Use Doxygen to generate a rtf extensions file\n"
+      "    {1} -e rtf extensionsFile\n\n"
+      "    If - is used for extensionsFile Doxygen will write to standard output.\n\n"
+      "7) Use Doxygen to compare the used configuration file with the template configuration file\n"
+      "    {1} -x [configFile]\n\n"
+      "   Use Doxygen to compare the used configuration file with the template configuration file\n"
+      "   without replacing the environment variables or CMake type replacement variables\n"
+      "    {1} -x_noenv [configFile]\n\n"
+      "8) Use Doxygen to show a list of built-in emojis.\n"
+      "    {1} -f emoji outputFileName\n\n"
+      "    If - is used for outputFileName Doxygen will write to standard output.\n\n"
+      "*) If -s is specified the comments of the configuration items in the config file will be omitted.\n"
+      "   If configName is omitted 'Doxyfile' will be used as a default.\n"
+      "   If - is used for configFile Doxygen will write / read the configuration to /from standard output / input.\n\n"
+      "If -q is used for a Doxygen documentation run, Doxygen will see this as if QUIET=YES has been set.\n\n"
+      "-v print version string, -V print extended version information\n"
+      "-h,-? prints usage help information\n"
+      "{1} -d prints additional usage flags for debugging purposes\n",versionString,name);
 }
 
 //----------------------------------------------------------------------------
@@ -11650,7 +11621,7 @@ void readConfiguration(int argc, char **argv)
           int retVal = Debug::setFlagStr(debugLabel);
           if (!retVal)
           {
-            err("option \"-d\" has unknown debug specifier: \"%s\".\n",qPrint(debugLabel));
+            err("option \"-d\" has unknown debug specifier: \"{}\".\n",debugLabel);
             devUsage();
             cleanUpDoxygen();
             exit(1);
@@ -11670,7 +11641,7 @@ void readConfiguration(int argc, char **argv)
           }
           else
           {
-            err("option should be \"-t\" or \"-t_time\", found: \"%s\".\n",argv[optInd]);
+            err("option should be \"-t\" or \"-t_time\", found: \"{}\".\n",argv[optInd]);
             cleanUpDoxygen();
             exit(1);
           }
@@ -11695,7 +11666,7 @@ void readConfiguration(int argc, char **argv)
         else if (!strcmp(argv[optInd]+1,"x")) diffList=Config::CompareMode::Compressed;
         else
         {
-          err("option should be \"-x\" or \"-x_noenv\", found: \"%s\".\n",argv[optInd]);
+          err("option should be \"-x\" or \"-x_noenv\", found: \"{}\".\n",argv[optInd]);
           cleanUpDoxygen();
           exit(1);
         }
@@ -11777,7 +11748,7 @@ void readConfiguration(int argc, char **argv)
             }
             if (!writeFile(argv[optInd+1],RTFGenerator::writeStyleSheetFile))
             {
-              err("error opening RTF style sheet file %s!\n",argv[optInd+1]);
+              err("error opening RTF style sheet file {}!\n",argv[optInd+1]);
               cleanUpDoxygen();
               exit(1);
             }
@@ -11793,7 +11764,7 @@ void readConfiguration(int argc, char **argv)
               QCString df = optInd+4<argc ? argv[optInd+4] : (FileInfo("Doxyfile").exists() ? QCString("Doxyfile") : QCString("doxyfile"));
               if (!Config::parse(df)) // parse the config file
               {
-                err("error opening or reading configuration file %s!\n",argv[optInd+4]);
+                err("error opening or reading configuration file {}!\n",argv[optInd+4]);
                 cleanUpDoxygen();
                 exit(1);
               }
@@ -11822,7 +11793,7 @@ void readConfiguration(int argc, char **argv)
               QCString df = optInd+4<argc ? argv[optInd+4] : (FileInfo("Doxyfile").exists() ? QCString("Doxyfile") : QCString("doxyfile"));
               if (!Config::parse(df))
               {
-                err("error opening or reading configuration file %s!\n",argv[optInd+4]);
+                err("error opening or reading configuration file {}!\n",argv[optInd+4]);
                 cleanUpDoxygen();
                 exit(1);
               }
@@ -11845,7 +11816,7 @@ void readConfiguration(int argc, char **argv)
           }
           else
           {
-            err("Illegal format specifier \"%s\": should be one of rtf, html or latex\n",qPrint(formatName));
+            err("Illegal format specifier \"{}\": should be one of rtf, html or latex\n",formatName);
             cleanUpDoxygen();
             exit(1);
           }
@@ -11885,7 +11856,7 @@ void readConfiguration(int argc, char **argv)
         }
         else
         {
-          err("Unknown option \"-%s\"\n",&argv[optInd][1]);
+          err("Unknown option \"-{}\"\n",&argv[optInd][1]);
           usage(argv[0],versionString);
           exit(1);
         }
@@ -11902,7 +11873,7 @@ void readConfiguration(int argc, char **argv)
         exit(0);
         break;
       default:
-        err("Unknown option \"-%c\"\n",argv[optInd][1]);
+        err("Unknown option \"-{:c}\"\n",argv[optInd][1]);
         usage(argv[0],versionString);
         exit(1);
     }
@@ -11948,7 +11919,7 @@ void readConfiguration(int argc, char **argv)
     }
     else
     {
-      err("configuration file %s not found!\n",argv[optInd]);
+      err("configuration file {} not found!\n",argv[optInd]);
       usage(argv[0],versionString);
       exit(1);
     }
@@ -11963,7 +11934,7 @@ void readConfiguration(int argc, char **argv)
 
   if (!Config::parse(configName,updateConfig,diffList))
   {
-    err("could not open or read configuration file %s!\n",qPrint(configName));
+    err("could not open or read configuration file {}!\n",configName);
     cleanUpDoxygen();
     exit(1);
   }
@@ -12053,14 +12024,14 @@ void adjustConfiguration()
 
       if (!updateLanguageMapping(ext,language))
       {
-        err("Failed to map file extension '%s' to unsupported language '%s'.\n"
+        err("Failed to map file extension '{}' to unsupported language '{}'.\n"
             "Check the EXTENSION_MAPPING setting in the config file.\n",
-            qPrint(ext),qPrint(language));
+            ext,language);
       }
       else
       {
-        msg("Adding custom extension mapping: '%s' will be treated as language '%s'\n",
-            qPrint(ext),qPrint(language));
+        msg("Adding custom extension mapping: '{}' will be treated as language '{}'\n",
+            ext,language);
       }
     }
   }
@@ -12070,9 +12041,9 @@ void adjustConfiguration()
   void *cd = portable_iconv_open("UTF-8",Config_getString(INPUT_ENCODING).data());
   if (cd==reinterpret_cast<void *>(-1))
   {
-    term("unsupported character conversion: '%s'->'%s': %s\n"
+    term("unsupported character conversion: '{}'->'UTF-8': {}\n"
         "Check the 'INPUT_ENCODING' setting in the config file!\n",
-        qPrint(Config_getString(INPUT_ENCODING)),qPrint("UTF-8"),strerror(errno));
+        Config_getString(INPUT_ENCODING),strerror(errno));
   }
   else
   {
@@ -12100,9 +12071,9 @@ void adjustConfiguration()
       cd = portable_iconv_open("UTF-8",encoding.data());
       if (cd==reinterpret_cast<void *>(-1))
       {
-        term("unsupported character conversion: '%s'->'%s': %s\n"
+        term("unsupported character conversion: '{}'->'UTF-8': {}\n"
             "Check the 'INPUT_FILE_ENCODING' setting in the config file!\n",
-            qPrint(encoding),qPrint("UTF-8"),strerror(errno));
+            encoding,strerror(errno));
       }
       else
       {
@@ -12155,9 +12126,7 @@ static void writeTagFile()
   std::ofstream f = Portable::openOutputStream(generateTagFile);
   if (!f.is_open())
   {
-    err("cannot open tag file %s for writing\n",
-        qPrint(generateTagFile)
-       );
+    err("cannot open tag file {} for writing\n", generateTagFile);
     return;
   }
   TextStream tagFile(&f);
@@ -12254,7 +12223,7 @@ static QCString createOutputDirectory(const QCString &baseDirName,
   Dir formatDir(result.str());
   if (!formatDir.exists() && !formatDir.mkdir(result.str()))
   {
-    term("Could not create output directory %s\n", qPrint(result));
+    term("Could not create output directory {}\n", result);
   }
   return result;
 }
@@ -12479,13 +12448,13 @@ static void checkMarkdownMainfile()
     FileInfo fi(mdfileAsMainPage.data());
     if (!fi.exists())
     {
-      warn_uncond("Specified markdown mainpage '%s' does not exist\n",qPrint(mdfileAsMainPage));
+      warn_uncond("Specified markdown mainpage '{}' does not exist\n",mdfileAsMainPage);
       return;
     }
     bool ambig = false;
     if (findFileDef(Doxygen::inputNameLinkedMap,fi.absFilePath(),ambig)==nullptr)
     {
-      warn_uncond("Specified markdown mainpage '%s' has not been defined as input file\n",qPrint(mdfileAsMainPage));
+      warn_uncond("Specified markdown mainpage '{}' has not been defined as input file\n",mdfileAsMainPage);
       return;
     }
   }
@@ -12505,7 +12474,7 @@ void parseInput()
   // we would like to show the versionString earlier, but we first have to handle the configuration file
   // to know the value of the QUIET setting.
   QCString versionString = getFullVersion();
-  msg("Doxygen version used: %s\n",qPrint(versionString));
+  msg("Doxygen version used: {}\n",versionString);
 
   computeVerifiedDotPath();
 
@@ -12527,13 +12496,13 @@ void parseInput()
         dir.setPath(Dir::currentDirPath());
         if (!dir.mkdir(outputDirectory.str()))
         {
-          term("tag OUTPUT_DIRECTORY: Output directory '%s' does not "
-              "exist and cannot be created\n",qPrint(outputDirectory));
+          term("tag OUTPUT_DIRECTORY: Output directory '{}' does not "
+              "exist and cannot be created\n",outputDirectory);
         }
         else
         {
-          msg("Notice: Output directory '%s' does not exist. "
-              "I have created it for you.\n", qPrint(outputDirectory));
+          msg("Notice: Output directory '{}' does not exist. "
+              "I have created it for you.\n", outputDirectory);
         }
         dir.setPath(outputDirectory.str());
       }
@@ -12685,12 +12654,12 @@ void parseInput()
   FileInfo fi(layoutFileName.str());
   if (fi.exists())
   {
-    msg("Parsing layout file %s...\n",qPrint(layoutFileName));
+    msg("Parsing layout file {}...\n",layoutFileName);
     LayoutDocManager::instance().parse(layoutFileName);
   }
   else if (!defaultLayoutUsed)
   {
-      warn_uncond("failed to open layout file '%s' for reading! Using default settings.\n",qPrint(layoutFileName));
+      warn_uncond("failed to open layout file '{}' for reading! Using default settings.\n",layoutFileName);
   }
   printLayout();
 
@@ -13254,8 +13223,8 @@ void generateOutput()
     Dir searchDir(searchDirName.str());
     if (!searchDir.exists() && !searchDir.mkdir(searchDirName.str()))
     {
-      term("Could not create search results directory '%s' $PWD='%s'\n",
-          qPrint(searchDirName),Dir::currentDirPath().c_str());
+      term("Could not create search results directory '{}' $PWD='{}'\n",
+          searchDirName,Dir::currentDirPath());
     }
     HtmlGenerator::writeSearchData(searchDirName);
     if (!serverBasedSearch) // client side search index
@@ -13469,12 +13438,12 @@ void generateOutput()
 
   g_outputList->cleanup();
 
-  msg("type lookup cache used %zu/%zu hits=%" PRIu64 " misses=%" PRIu64 "\n",
+  msg("type lookup cache used {}/{} hits={} misses={}\n",
       Doxygen::typeLookupCache->size(),
       Doxygen::typeLookupCache->capacity(),
       Doxygen::typeLookupCache->hits(),
       Doxygen::typeLookupCache->misses());
-  msg("symbol lookup cache used %zu/%zu hits=%" PRIu64 " misses=%" PRIu64 "\n",
+  msg("symbol lookup cache used {}/{} hits={} misses={}\n",
       Doxygen::symbolLookupCache->size(),
       Doxygen::symbolLookupCache->capacity(),
       Doxygen::symbolLookupCache->hits(),
@@ -13484,7 +13453,7 @@ void generateOutput()
   int cacheParam = std::max(typeCacheParam,symbolCacheParam);
   if (cacheParam>Config_getInt(LOOKUP_CACHE_SIZE))
   {
-    msg("Note: based on cache misses the ideal setting for LOOKUP_CACHE_SIZE is %d at the cost of higher memory usage.\n",cacheParam);
+    msg("Note: based on cache misses the ideal setting for LOOKUP_CACHE_SIZE is {} at the cost of higher memory usage.\n",cacheParam);
   }
 
   if (Debug::isFlagSet(Debug::Time))
@@ -13492,7 +13461,7 @@ void generateOutput()
 
     std::size_t numThreads = static_cast<std::size_t>(Config_getInt(NUM_PROC_THREADS));
     if (numThreads<1) numThreads=1;
-    msg("Total elapsed time: %.6f seconds\n(of which an average of %.6f seconds per thread waiting for external tools to finish)\n",
+    msg("Total elapsed time: {:.6f} seconds\n(of which an average of {:.6f} seconds per thread waiting for external tools to finish)\n",
          (static_cast<double>(Debug::elapsedTime())),
          Portable::getSysElapsedTime()/static_cast<double>(numThreads)
         );

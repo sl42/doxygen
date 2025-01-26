@@ -1171,6 +1171,33 @@ QCString inlineArgListToDoc(const ArgumentList &al)
   return paramDocs;
 }
 
+QCString inlineTemplateArgListToDoc(const ArgumentList &al)
+{
+  QCString paramDocs;
+  if (al.hasTemplateDocumentation())
+  {
+    for (const Argument &a : al)
+    {
+      if (!a.docs.isEmpty())
+      {
+        if (!a.name.isEmpty())
+        {
+          paramDocs+=" \\ilinebr @tparam "+a.name+" "+a.docs;
+        }
+        else if (!a.type.isEmpty())
+        {
+          QCString type = a.type;
+          type.stripPrefix("class ");
+          type.stripPrefix("typename ");
+          type = type.stripWhiteSpace();
+          paramDocs+=" \\ilinebr @tparam "+type+" "+a.docs;
+        }
+      }
+    }
+  }
+  return paramDocs;
+}
+
 QCString argListToString(const ArgumentList &al,bool useCanonicalType,bool showDefVals)
 {
   QCString result;
@@ -1430,7 +1457,7 @@ QCString fileToString(const QCString &name,bool filter,bool isSourceCode)
     FileInfo fi(name.str());
     if (!fi.exists() || !fi.isFile())
     {
-      err("file '%s' not found\n",qPrint(name));
+      err("file '{}' not found\n",name);
       return "";
     }
     std::string buf;
@@ -1443,7 +1470,7 @@ QCString fileToString(const QCString &name,bool filter,bool isSourceCode)
   }
   if (!fileOpened)
   {
-    err("cannot open file '%s' for reading\n",qPrint(name));
+    err("cannot open file '{}' for reading\n",name);
   }
   return "";
 }
@@ -4094,7 +4121,7 @@ void createSubDirs(const Dir &d)
       subdir.sprintf("d%x",l1);
       if (!d.exists(subdir.str()) && !d.mkdir(subdir.str()))
       {
-        term("Failed to create output directory '%s'\n",qPrint(subdir));
+        term("Failed to create output directory '{}'\n",subdir);
       }
       for (int l2=0; l2<createSubdirsLevelPow2; l2++)
       {
@@ -4102,7 +4129,7 @@ void createSubDirs(const Dir &d)
         subsubdir.sprintf("d%x/d%02x",l1,l2);
         if (!d.exists(subsubdir.str()) && !d.mkdir(subsubdir.str()))
         {
-          term("Failed to create output directory '%s'\n",qPrint(subsubdir));
+          term("Failed to create output directory '{}'\n",subsubdir);
         }
       }
     }
@@ -5134,8 +5161,8 @@ PageDef *addRelatedPage(const QCString &name,const QCString &ptitle,
   {
     if (!xref && !title.isEmpty() && pd->title()!=pd->name() && pd->title()!=title)
     {
-      warn(fileName,startLine,"multiple use of page label '%s' with different titles, (other occurrence: %s, line: %d)",
-         qPrint(name),qPrint(pd->docFile()),pd->getStartBodyLine());
+      warn(fileName,startLine,"multiple use of page label '{}' with different titles, (other occurrence: {}, line: {})",
+         name,pd->docFile(),pd->getStartBodyLine());
     }
     if (!title.isEmpty() && pd->title()==pd->name()) // pd has no real title yet
     {
@@ -5220,11 +5247,11 @@ PageDef *addRelatedPage(const QCString &name,const QCString &ptitle,
         }
         else if (si->lineNr() != -1)
         {
-          warn(orgFile,line,"multiple use of section label '%s', (first occurrence: %s, line %d)",qPrint(pd->name()),qPrint(si->fileName()),si->lineNr());
+          warn(orgFile,line,"multiple use of section label '{}', (first occurrence: {}, line {})",pd->name(),si->fileName(),si->lineNr());
         }
         else
         {
-          warn(orgFile,line,"multiple use of section label '%s', (first occurrence: %s)",qPrint(pd->name()),qPrint(si->fileName()));
+          warn(orgFile,line,"multiple use of section label '{}', (first occurrence: {})",pd->name(),si->fileName());
         }
       }
       else
@@ -5477,7 +5504,7 @@ QCString stripLeadingAndTrailingEmptyLines(const QCString &s,int &docLine)
   while ((c=*p))
   {
     if (c==' ' || c=='\t' || c=='\r') i++,p++;
-    else if (c=='\\' && qstrncmp(p,"\\ilinebr",8)==0) i+=8,li=i,p+=8;
+    else if (c=='\\' && literal_at(p,"\\ilinebr")) i+=8,li=i,p+=8;
     else if (c=='\n') i++,li=i,docLine++,p++;
     else break;
   }
@@ -5489,8 +5516,8 @@ QCString stripLeadingAndTrailingEmptyLines(const QCString &s,int &docLine)
   {
     c=*p;
     if (c==' ' || c=='\t' || c=='\r') b--,p--;
-    else if (c=='r' && b>=7 && qstrncmp(p-7,"\\ilinebr",8)==0) bi=b-7,b-=8,p-=8;
-    else if (c=='>' && b>=11 && qstrncmp(p-11,"\\ilinebr<br>",12)==0) bi=b-11,b-=12,p-=12;
+    else if (c=='r' && b>=7 && literal_at(p-7,"\\ilinebr")) bi=b-7,b-=8,p-=8;
+    else if (c=='>' && b>=11 && literal_at(p-11,"\\ilinebr<br>")) bi=b-11,b-=12,p-=12;
     else if (c=='\n') bi=b,b--,p--;
     else break;
   }
@@ -5563,13 +5590,13 @@ bool updateLanguageMapping(const QCString &extension,const QCString &language)
   g_extLookup.emplace(extName.str(),parserId);
   if (!Doxygen::parserManager->registerExtension(extName,it1->parserName))
   {
-    err("Failed to assign extension %s to parser %s for language %s\n",
-        extName.data(),it1->parserName,qPrint(language));
+    err("Failed to assign extension {} to parser {} for language {}\n",
+        extName.data(),it1->parserName,language);
   }
   else
   {
-    //msg("Registered extension %s to language parser %s...\n",
-    //    extName.data(),qPrint(language));
+    //msg("Registered extension {} to language parser {}...\n",
+    //    extName,language);
   }
   return TRUE;
 }
@@ -5911,9 +5938,9 @@ static void transcodeCharacterBuffer(const QCString &fileName,std::string &conte
   void *cd = portable_iconv_open(outputEncoding.data(),inputEncoding.data());
   if (cd==reinterpret_cast<void *>(-1))
   {
-    term("unsupported character conversion: '%s'->'%s': %s\n"
+    term("unsupported character conversion: '{}'->'{}': {}\n"
         "Check the INPUT_ENCODING setting in the config file!\n",
-        qPrint(inputEncoding),qPrint(outputEncoding),strerror(errno));
+        inputEncoding,outputEncoding,strerror(errno));
   }
   size_t      iLeft      = contents.size();
   const char *srcPtr     = contents.data();
@@ -5932,8 +5959,8 @@ static void transcodeCharacterBuffer(const QCString &fileName,std::string &conte
   }
   else
   {
-    term("%s: failed to translate characters from %s to %s: check INPUT_ENCODING\n",
-        qPrint(fileName),qPrint(inputEncoding),qPrint(outputEncoding));
+    term("{}: failed to translate characters from {} to {}: check INPUT_ENCODING\n",
+        fileName,inputEncoding,outputEncoding);
   }
   portable_iconv_close(cd);
 }
@@ -5950,7 +5977,7 @@ bool readInputFile(const QCString &fileName,std::string &contents,bool filter,bo
     std::ifstream f = Portable::openInputStream(fileName,true);
     if (!f.is_open())
     {
-      err("could not open file %s\n",qPrint(fileName));
+      err("could not open file {}\n",fileName);
       return FALSE;
     }
     // read the file
@@ -5959,18 +5986,18 @@ bool readInputFile(const QCString &fileName,std::string &contents,bool filter,bo
     f.read(contents.data(),fileSize);
     if (f.fail())
     {
-      err("problems while reading file %s\n",qPrint(fileName));
+      err("problems while reading file {}\n",fileName);
       return FALSE;
     }
   }
   else
   {
     QCString cmd=filterName+" \""+fileName+"\"";
-    Debug::print(Debug::ExtCmd,0,"Executing popen(`%s`)\n",qPrint(cmd));
+    Debug::print(Debug::ExtCmd,0,"Executing popen(`{}`)\n",cmd);
     FILE *f=Portable::popen(cmd,"r");
     if (!f)
     {
-      err("could not execute filter %s\n",qPrint(filterName));
+      err("could not execute filter {}\n",filterName);
       return FALSE;
     }
     const int bufSize=4096;
@@ -5983,7 +6010,7 @@ bool readInputFile(const QCString &fileName,std::string &contents,bool filter,bo
     }
     Portable::pclose(f);
     Debug::print(Debug::FilterOutput, 0, "Filter output\n");
-    Debug::print(Debug::FilterOutput,0,"-------------\n%s\n-------------\n",qPrint(contents));
+    Debug::print(Debug::FilterOutput,0,"-------------\n{}\n-------------\n",contents);
   }
 
   if (contents.size()>=2 &&
@@ -6272,7 +6299,7 @@ bool copyFile(const QCString &src,const QCString &dest)
 {
   if (!Dir().copy(src.str(),dest.str()))
   {
-    err("could not copy file %s to %s\n",qPrint(src),qPrint(dest));
+    err("could not copy file {} to {}\n",src,dest);
     return false;
   }
   return true;
@@ -6436,7 +6463,7 @@ QCString stripIndentation(const QCString &s)
         indent++;
       }
     }
-    else if (c=='\\' && qstrncmp(p,"ilinebr ",8)==0)
+    else if (c=='\\' && literal_at(p,"ilinebr "))
       // we also need to remove the indentation after a \ilinebr command at the end of a line
     {
       result << "\\ilinebr ";
@@ -6448,7 +6475,7 @@ QCString stripIndentation(const QCString &s)
         p+=skipAmount; // remove the indent
       }
     }
-    else if (c=='@' && qstrncmp(p,"ilinebr",7)==0)
+    else if (c=='@' && literal_at(p,"ilinebr"))
     {
       result << "\\ilinebr";
       p+=7;
@@ -6969,13 +6996,13 @@ void checkBlocks(const QCString &s, const QCString fileName,const SelectionMarke
         {
           if (markerInfo.closeLen==0 && *p=='\n') // matching end of line
           {
-            warn(fileName,-1,"Remaining begin replacement with marker '%s'",qPrint(marker));
+            warn(fileName,-1,"Remaining begin replacement with marker '{}'",marker);
             break;
           }
           else if (markerInfo.closeLen!= 0 && qstrncmp(p,markerInfo.closeStr,markerInfo.closeLen)==0) // matching marker closing
           {
             p += markerInfo.closeLen;
-            warn(fileName,-1,"Remaining begin replacement with marker '%s'",qPrint(marker));
+            warn(fileName,-1,"Remaining begin replacement with marker '{}'",marker);
             break;
           }
           marker += *p;
@@ -6993,13 +7020,13 @@ void checkBlocks(const QCString &s, const QCString fileName,const SelectionMarke
         {
           if (markerInfo.closeLen==0 && *p=='\n') // matching end of line
           {
-            warn(fileName,-1,"Remaining end replacement with marker '%s'",qPrint(marker));
+            warn(fileName,-1,"Remaining end replacement with marker '{}'",marker);
             break;
           }
           else if (markerInfo.closeLen!= 0 && qstrncmp(p,markerInfo.closeStr,markerInfo.closeLen)==0) // matching marker closing
           {
             p += markerInfo.closeLen;
-            warn(fileName,-1,"Remaining end replacement with marker '%s'",qPrint(marker));
+            warn(fileName,-1,"Remaining end replacement with marker '{}'",marker);
             break;
           }
           marker += *p;
@@ -7178,12 +7205,12 @@ QCString detab(const QCString &s,size_t &refIndent)
           out.addChar(data[i++]);
           col+=2;
         }
-        else if (i+5<size && qstrncmp(&data[i],"iskip",5)==0) // \iskip command
+        else if (i+5<size && literal_at(data+i,"iskip")) // \iskip command
         {
           i+=5;
           skip = true;
         }
-        else if (i+8<size && qstrncmp(&data[i],"endiskip",8)==0) // \endiskip command
+        else if (i+8<size && literal_at(data+i,"endiskip")) // \endiskip command
         {
           i+=8;
           skip = false;

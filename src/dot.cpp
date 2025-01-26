@@ -105,7 +105,7 @@ DotRunner* DotManager::createRunner(const QCString &absDotName, const QCString& 
     // we have a match
     if (md5Hash != runit->second->getMd5Hash())
     {
-      err("md5 hash does not match for two different runs of %s !\n", qPrint(absDotName));
+      err("md5 hash does not match for two different runs of {} !\n", absDotName);
     }
     rv = runit->second.get();
   }
@@ -137,7 +137,7 @@ bool DotManager::run()
     }
     else
     {
-      msg("Generating dot graphs using %d parallel threads...\n",Config_getInt(DOT_NUM_THREADS));
+      msg("Generating dot graphs using {:d} parallel threads...\n",Config_getInt(DOT_NUM_THREADS));
     }
   }
   size_t i=1;
@@ -169,7 +169,7 @@ bool DotManager::run()
   {
     for (auto & dr : m_runners)
     {
-      msg("Running dot for graph %zu/%zu\n",prev,numDotRuns);
+      msg("Running dot for graph {}/{}\n",prev,numDotRuns);
       dr.second->run();
       prev++;
     }
@@ -189,7 +189,7 @@ bool DotManager::run()
     for (auto &f : results)
     {
       f.get();
-      msg("Running dot for graph %zu/%zu\n",prev,numDotRuns);
+      msg("Running dot for graph {}/{}\n",prev,numDotRuns);
       prev++;
     }
   }
@@ -204,37 +204,37 @@ bool DotManager::run()
   // (for zoomable SVGs), and patching the .html files requires reading that
   // header after the SVG is patched, we first process the .svg files and
   // then the other files.
-  msg("Number of 'm_filePatchers': %zu\n", m_filePatchers.size());
+  msg("Number of 'm_filePatchers': {}\n", m_filePatchers.size());
   if (m_filePatchers.size() != numFilePatchers)
   {
-    msg("Warning: The number of  'm_filePatchers' (%zu) and the 'numFilePatchers' (%zu) number are different!\n",
+    msg("Warning: The number of  'm_filePatchers' ({}) and the 'numFilePatchers' ({}) number are different!\n",
         m_filePatchers.size(), numFilePatchers);
   }
   for (auto & fp : m_filePatchers)
   {
     if (fp.second.isSVGFile())
     {
-      msg("Patching SVG output file %zu/%zu\n",i,numFilePatchers);
+      msg("Patching SVG output file {}/{}\n",i,numFilePatchers);
       if (!fp.second.run())
       {
-        msg("ERROR: Failed to patch SVG output file %zu/%zu (fp.second.run() returned 'false')\n", i, numFilePatchers);
+        msg("ERROR: Failed to patch SVG output file {}/{} (fp.second.run() returned 'false')\n", i, numFilePatchers);
       }
       i++;
     }
   }
   if (m_filePatchers.size() != numFilePatchers)
   {
-    msg("Warning: The number of  'm_filePatchers' (%zu) and the 'numFilePatchers' number (%zu) are different!\n", 
+    msg("Warning: The number of  'm_filePatchers' ({}) and the 'numFilePatchers' number ({}) are different!\n", 
         m_filePatchers.size(), numFilePatchers);
   }
   for (auto& fp : m_filePatchers)
   {
     if (!fp.second.isSVGFile())
     {
-      msg("Patching non-SVG output file %zu/%zu\n",i,numFilePatchers);
+      msg("Patching non-SVG output file {}/{}\n",i,numFilePatchers);
       if (!fp.second.run())
       {
-        msg("ERROR: Failed to patch non-SVG output file %zu/%zu (fp.second.run() returned 'false')\n", i, numFilePatchers);
+        msg("ERROR: Failed to patch non-SVG output file {}/{} (fp.second.run() returned 'false')\n", i, numFilePatchers);
       }
       i++;
     }
@@ -251,7 +251,7 @@ void writeDotGraphFromFile(const QCString &inFile,const QCString &outDir,
   Dir d(outDir.str());
   if (!d.exists())
   {
-    term("Output dir %s does not exist!\n",qPrint(outDir));
+    term("Output dir {} does not exist!\n",outDir);
   }
 
   QCString imgExt = getDotImageExtension();
@@ -307,7 +307,7 @@ void writeDotImageMapFromFile(TextStream &t,
   Dir d(outDir.str());
   if (!d.exists())
   {
-    term("Output dir %s does not exist!\n",qPrint(outDir));
+    term("Output dir {} does not exist!\n",outDir);
   }
 
   QCString mapName = baseName+".map";

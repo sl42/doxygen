@@ -209,7 +209,10 @@ inline size_t isNewline(std::string_view data)
   // normal newline
   if (data[0] == '\n') return 1;
   // artificial new line from ^^ in ALIASES
-  if (data[0] == '\\' && qstrncmp(data.data()+1,"ilinebr ",7)==0) return data[8]==' ' ? 9 : 8;
+  if (literal_at(data,"\\ilinebr"))
+  {
+    return (data.size()>8 && data[8]==' ') ? 9 : 8; // also count space after \ilinebr if present
+  }
   return 0;
 }
 
@@ -551,6 +554,7 @@ size_t Markdown::Private::isSpecialCommand(std::string_view data,size_t offset)
       // skip over name (and optionally type)
       while (offset_<data_.size() && (c=data_[offset_])!='\n' && (allowSpaces || c!=' ') && c!='(')
       {
+        if (literal_at(data_.substr(offset_),"\\ilinebr ")) break;
         offset_++;
       }
       if (c=='(') // find the end of the function
@@ -955,13 +959,13 @@ int Markdown::Private::processNmdash(std::string_view data,size_t offset)
   {
     count++;
   }
-  if (count>=2 && offset>=2 && qstrncmp(data.data()-2,"<!",2)==0)
+  if (count>=2 && offset>=2 && literal_at(data.data()-2,"<!"))
   { AUTO_TRACE_EXIT("result={}",1-count); return 1-count; } // start HTML comment
   if (count==2 && size > 2 && data[2]=='>')
   { return 0; } // end HTML comment
   if (count==3 && size > 3 && data[3]=='>')
   { return 0; } // end HTML comment
-  if (count==2 && (offset<8 || qstrncmp(data.data()-8,"operator",8)!=0)) // -- => ndash
+  if (count==2 && (offset<8 || !literal_at(data.data()-8,"operator"))) // -- => ndash
   {
     out+="&ndash;";
     AUTO_TRACE_EXIT("result=2");
@@ -2025,13 +2029,13 @@ QCString Markdown::Private::extractTitleId(QCString &title, int level, bool *pIs
     title = title.left(match.position());
     if (AnchorGenerator::instance().reserve(id)>0)
     {
-      warn(fileName, lineNr, "An automatically generated id already has the name '%s'!", id.c_str());
+      warn(fileName, lineNr, "An automatically generated id already has the name '{}'!", id);
     }
     //printf("found match id='%s' title=%s\n",id.c_str(),qPrint(title));
     AUTO_TRACE_EXIT("id={}",id);
     return id;
   }
-  if ((level>0) && (level<=Config_getInt(TOC_INCLUDE_HEADINGS)))
+  if (((level>0) && (level<=Config_getInt(TOC_INCLUDE_HEADINGS))) || (Config_getEnum(MARKDOWN_ID_STYLE)==MARKDOWN_ID_STYLE_t::GITHUB))
   {
     QCString id = AnchorGenerator::instance().generate(ti);
     if (pIsIdGenerated) *pIsIdGenerated=true;
@@ -2901,7 +2905,7 @@ bool skipOverFileAndLineCommands(std::string_view data,size_t indent,size_t &off
   size_t i = offset;
   size_t size = data.size();
   while (i<data.size() && data[i]==' ') i++;
-  if (i<size+8 && data[i]=='\\' && qstrncmp(&data[i+1],"ifile \"",7)==0)
+  if (literal_at(data.substr(i),"\\ifile \""))
   {
     size_t locStart = i;
     if (i>offset) locStart--; // include the space before \ifile
@@ -2909,7 +2913,7 @@ bool skipOverFileAndLineCommands(std::string_view data,size_t indent,size_t &off
     bool found=false;
     while (i+9<size && data[i]!='\n')
     {
-      if (data[i]=='\\' && qstrncmp(&data[i+1],"ilinebr ",8)==0)
+      if (literal_at(data.substr(i),"\\ilinebr "))
       {
         found=true;
         break;
@@ -3469,7 +3473,7 @@ static ExplicitPageResult isExplicitPage(const QCString &docs)
     {
       i++;
     }
-    if (i+5<size && data[i]=='<' && qstrncmp(&data[i],"<!--!",5)==0) // skip over <!--! marker
+    if (literal_at(data.substr(i),"<!--!")) // skip over <!--! marker
     {
       i+=5;
       while (i<size && (data[i]==' ' || data[i]=='\n')) // skip over spaces after the <!--! marker
@@ -3479,10 +3483,10 @@ static ExplicitPageResult isExplicitPage(const QCString &docs)
     }
     if (i+1<size &&
         (data[i]=='\\' || data[i]=='@') &&
-        (qstrncmp(&data[i+1],"page ",5)==0 || qstrncmp(&data[i+1],"mainpage",8)==0)
+        (literal_at(data.substr(i+1),"page ") || literal_at(data.substr(i+1),"mainpage"))
        )
     {
-      if (qstrncmp(&data[i+1],"page ",5)==0)
+      if (literal_at(data.substr(i+1),"page "))
       {
         AUTO_TRACE_EXIT("result=ExplicitPageResult::explicitPage");
         return ExplicitPageResult::explicitPage;
@@ -3495,7 +3499,7 @@ static ExplicitPageResult isExplicitPage(const QCString &docs)
     }
     else if (i+1<size &&
              (data[i]=='\\' || data[i]=='@') &&
-             (qstrncmp(&data[i+1],"dir\n",4)==0 || qstrncmp(&data[i+1],"dir ",4)==0)
+             (literal_at(data.substr(i+1),"dir\n") || literal_at(data.substr(i+1),"dir "))
             )
     {
       AUTO_TRACE_EXIT("result=ExplicitPageResult::explicitDirPage");
@@ -3584,11 +3588,11 @@ QCString Markdown::process(const QCString &input, int &startNewlines, bool fromP
   prv->processInline(s.view());
   if (fromParseInput)
   {
-    Debug::print(Debug::Markdown,0,"---- output -----\n%s\n=========\n",qPrint(prv->out));
+    Debug::print(Debug::Markdown,0,"---- output -----\n{}\n=========\n",qPrint(prv->out));
   }
   else
   {
-    Debug::print(Debug::Markdown,0,"======== Markdown =========\n---- input ------- \n%s\n---- output -----\n%s\n=========\n",qPrint(input),qPrint(prv->out));
+    Debug::print(Debug::Markdown,0,"======== Markdown =========\n---- input ------- \n{}\n---- output -----\n{}\n=========\n",input,prv->out);
   }
 
   // post processing
@@ -3598,7 +3602,7 @@ QCString Markdown::process(const QCString &input, int &startNewlines, bool fromP
   {
     while (*p==' ')  p++; // skip over spaces
     while (*p=='\n') {startNewlines++;p++;}; // skip over newlines
-    if (qstrncmp(p,"<br>",4)==0) p+=4; // skip over <br>
+    if (literal_at(p,"<br>")) p+=4; // skip over <br>
   }
   if (p>result.data())
   {
@@ -3651,7 +3655,7 @@ void MarkdownOutlineParser::parseInput(const QCString &fileName,
   current->docFile  = fileName;
   current->docLine  = 1;
   QCString docs = fileBuf;
-  Debug::print(Debug::Markdown,0,"======== Markdown =========\n---- input ------- \n%s\n",qPrint(fileBuf));
+  Debug::print(Debug::Markdown,0,"======== Markdown =========\n---- input ------- \n{}\n",fileBuf);
   QCString id;
   Markdown markdown(fileName,1,0);
   bool isIdGenerated = false;
@@ -3691,6 +3695,10 @@ void MarkdownOutlineParser::parseInput(const QCString &fileName,
       }
       else if (isSubdirDocs)
       {
+        if (!generatedId.isEmpty() && !title.isEmpty())
+        {
+          docs.prepend("@section " + generatedId + " " + title + "\\ilinebr ");
+        }
         docs.prepend("@dir\\ilinebr ");
       }
       else

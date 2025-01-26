@@ -273,14 +273,15 @@ void ClangTUParser::parse()
       CXDiagnostic diag = clang_getDiagnostic(p->tu, static_cast<unsigned>(i));
       CXString string = clang_formatDiagnostic(diag,
           clang_defaultDiagnosticDisplayOptions());
-      err("%s [clang]\n",clang_getCString(string));
+      err("{} [clang]\n",clang_getCString(string));
       clang_disposeString(string);
       clang_disposeDiagnostic(diag);
     }
   }
   else
   {
-    err("clang: Failed to parse translation unit '%s'; numUnsavedFiles: %i, 'p->ufs' entries: %u\n",
+
+    err("clang: Failed to parse translation unit '{}'; numUnsavedFiles: {}, 'p->ufs' entries: {}\n",
         qPrint(fileName), numUnsavedFiles, p->ufs.size());
     fflush(stdout);
     fflush(stderr);
@@ -339,7 +340,7 @@ void ClangTUParser::switchToFile(const FileDef *fd)
     }
     else
     {
-      err("clang: Failed to find input file %s in mapping\n",qPrint(fd->absFilePath()));
+      err("clang: Failed to find input file {} in mapping\n",fd->absFilePath());
     }
   }
 }
@@ -925,8 +926,7 @@ class ClangParser::Private
       if (!clangCompileDatabase.isEmpty() && clangCompileDatabase!="0" && db==nullptr)
       {
           // user specified a path, but DB file was not found
-          err("%s using clang compilation database path of: \"%s\"\n", error.c_str(),
-              clangCompileDatabase.data());
+          err("{} using clang compilation database path of: \"{}\"\n", error, clangCompileDatabase);
       }
     }
 

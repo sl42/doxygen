@@ -56,6 +56,7 @@
 #include "datetime.h"
 #include "portable.h"
 #include "outputlist.h"
+#include "stringutil.h"
 
 //#define DBG_HTML(x) x;
 #define DBG_HTML(x)
@@ -168,15 +169,15 @@ static QCString getConvertLatexMacro()
     // check for \newcommand or \renewcommand
     if (data[i] != '\\')
     {
-      warn(macrofile,line, "file contains non valid code, expected '\\' got '%c'",data[i]);
+      warn(macrofile,line, "file contains non valid code, expected '\\' got '{:c}'",data[i]);
       return "";
     }
     i++;
-    if (!qstrncmp(data + i, "newcommand", strlen("newcommand")))
+    if (literal_at(data+i,"newcommand"))
     {
       i += strlen("newcommand");
     }
-    else if (!qstrncmp(data + i, "renewcommand", strlen("renewcommand")))
+    else if (literal_at(data+i,"renewcommand"))
     {
       i += strlen("renewcommand");
     }
@@ -188,13 +189,13 @@ static QCString getConvertLatexMacro()
     // handle {cmd}
     if (data[i] != '{')
     {
-      warn(macrofile,line, "file contains non valid code, expected '{' got '%c'",data[i]);
+      warn(macrofile,line, "file contains non valid code, expected '{{' got '{:c}'",data[i]);
       return "";
     }
     i++;
     if (data[i] != '\\')
     {
-      warn(macrofile,line, "file contains non valid code, expected '\\' got '%c'",data[i]);
+      warn(macrofile,line, "file contains non valid code, expected '\\' got '{:c}'",data[i]);
       return "";
     }
     i++;
@@ -203,7 +204,7 @@ static QCString getConvertLatexMacro()
     while (i < size && (data[i] != '}')) out.addChar(data[i++]);
     if (i >= size)
     {
-      warn(macrofile,line, "file contains non valid code, no closing '}' for command");
+      warn(macrofile,line, "file contains non valid code, no closing '}}' for command");
       return "";
     }
     out.addChar(':');
@@ -226,14 +227,14 @@ static QCString getConvertLatexMacro()
     }
     else if (data[i] != '{')
     {
-      warn(macrofile,line, "file contains non valid code, expected '[' or '{' got '%c'",data[i]);
+      warn(macrofile,line, "file contains non valid code, expected '[' or '{{' got '{:c}'",data[i]);
       return "";
     }
     // handle {replacement}
     // retest as the '[' part might have advanced so we can have a new '{'
     if (data[i] != '{')
     {
-      warn(macrofile,line, "file contains non valid code, expected '{' got '%c'",data[i]);
+      warn(macrofile,line, "file contains non valid code, expected '{{' got '{:c}'",data[i]);
       return "";
     }
     out.addChar('"');
@@ -281,7 +282,7 @@ static QCString getConvertLatexMacro()
     }
     if (i > size)
     {
-      warn(macrofile,line, "file contains non valid code, no closing '}' for replacement");
+      warn(macrofile,line, "file contains non valid code, no closing '}}' for replacement");
       return "";
     }
     out.addChar('}');
@@ -1146,7 +1147,7 @@ void HtmlGenerator::init()
   Dir d(dname.str());
   if (!d.exists() && !d.mkdir(dname.str()))
   {
-    term("Could not create output directory %s\n",qPrint(dname));
+    term("Could not create output directory {}\n",dname);
   }
   //writeLogo(dname);
   if (!Config_getString(HTML_HEADER).isEmpty())
@@ -1632,7 +1633,7 @@ void HtmlGenerator::writeStyleInfo(int part)
         FileInfo cssfi(cssName.str());
         if (!cssfi.exists() || !cssfi.isFile() || !cssfi.isReadable())
         {
-          err("style sheet %s does not exist or is not readable!\n", qPrint(Config_getString(HTML_STYLESHEET)));
+          err("style sheet {} does not exist or is not readable!\n", Config_getString(HTML_STYLESHEET));
         }
         else
         {
@@ -3169,7 +3170,7 @@ void HtmlGenerator::writeSearchPage()
   }
   else
   {
-     err("Failed to open file '%s' for writing...\n",qPrint(scriptName));
+     err("Failed to open file '{}' for writing...\n",scriptName);
   }
 }
 
@@ -3279,7 +3280,7 @@ void HtmlGenerator::writeExternalSearchPage()
   }
   else
   {
-     err("Failed to open file '%s' for writing...\n",qPrint(scriptName));
+     err("Failed to open file '{}' for writing...\n",scriptName);
   }
 }
 
