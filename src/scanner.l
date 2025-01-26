@@ -5913,7 +5913,8 @@ NONLopt [^\n]*
 <SkipString,SkipPHPString>\n            {
                                           lineCount(yyscanner);
                                         }
-<SkipString>"[["                        { }
+<SkipString>"[["                        { 
+                                        }
 <SkipString,SkipPHPString>.             { }
 <CompoundName>":"                       { // for "class : public base {} var;" construct, see bug 608359
                                           unput(':');
@@ -7489,10 +7490,11 @@ NONLopt [^\n]*
                                             lineCount(yyscanner);
                                           }
                                         }
-<SkipCxxComment>{ANYopt}/\n                   {
+<SkipCxxComment>{ANYopt}/\n             {
                                           BEGIN( yyextra->lastCContext ) ;
                                         }
-<SkipComment>[^\*\n]+
+<SkipComment>[^\*\n]+                   {
+                                        }
 
   /* ------------ Generic rules -------------- */
 
