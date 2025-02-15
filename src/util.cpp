@@ -2193,6 +2193,39 @@ void mergeArguments(ArgumentList &srcAl,ArgumentList &dstAl,bool forceNameOverwr
 
 //---------------------------------------------------------------------------------------
 
+bool matchTemplateArguments(const ArgumentList &srcAl,const ArgumentList &dstAl)
+{
+  AUTO_TRACE("srcAl=%s dstAl=%s",argListToString(srcAl),argListToString(dstAl));
+  if (srcAl.size()!=dstAl.size()) // different number of template parameters -> overload
+  {
+    AUTO_TRACE_EXIT("different number of parameters");
+    return false;
+  }
+  auto isUnconstraintTemplate = [](const QCString &type)
+  {
+    return type=="typename" || type=="class" || type.startsWith("typename ") || type.startsWith("class ");
+  };
+  auto srcIt = srcAl.begin();
+  auto dstIt = dstAl.begin();
+  while (srcIt!=srcAl.end() && dstIt!=dstAl.end())
+  {
+    const Argument &srcA = *srcIt;
+    const Argument &dstA = *dstIt;
+    if ((!isUnconstraintTemplate(srcA.type) || !isUnconstraintTemplate(dstA.type)) && srcA.type!=dstA.type) // different constraints -> overload
+    {
+      AUTO_TRACE_EXIT("different constraints");
+      return false;
+    }
+    ++srcIt;
+    ++dstIt;
+  }
+  AUTO_TRACE_EXIT("same");
+  // no overload with respect to the template parameters
+  return true;
+}
+
+//---------------------------------------------------------------------------------------
+
 static void findMembersWithSpecificName(const MemberName *mn,
                                         const QCString &args,
                                         bool checkStatics,
@@ -6407,7 +6440,7 @@ bool protectionLevelVisible(Protection prot)
 
 //---------------------------------------------------------------------------
 
-QCString stripIndentation(const QCString &s)
+QCString stripIndentation(const QCString &s,bool skipFirstLine)
 {
   if (s.isEmpty()) return s; // empty string -> we're done
 
@@ -6417,16 +6450,17 @@ QCString stripIndentation(const QCString &s)
   char c=0;
   int indent=0;
   int minIndent=1000000; // "infinite"
-  bool searchIndent=TRUE;
+  bool searchIndent=true;
   int tabSize=Config_getInt(TAB_SIZE);
+  bool skipFirst = skipFirstLine;
   while ((c=*p++))
   {
     if      (c=='\t') indent+=tabSize - (indent%tabSize);
-    else if (c=='\n') indent=0,searchIndent=TRUE;
+    else if (c=='\n') indent=0,searchIndent=true,skipFirst=false;
     else if (c==' ')  indent++;
-    else if (searchIndent)
+    else if (searchIndent && !skipFirst)
     {
-      searchIndent=FALSE;
+      searchIndent=false;
       if (indent<minIndent) minIndent=indent;
     }
   }
@@ -6438,14 +6472,16 @@ QCString stripIndentation(const QCString &s)
   TextStream result;
   p=s.data();
   indent=0;
+  skipFirst=skipFirstLine;
   while ((c=*p++))
   {
     if (c=='\n') // start of new line
     {
       indent=0;
       result << c;
+      skipFirst=false;
     }
-    else if (indent<minIndent) // skip until we reach minIndent
+    else if (indent<minIndent && !skipFirst) // skip until we reach minIndent
     {
       if (c=='\t')
       {
@@ -6652,8 +6688,8 @@ QCString extractDirection(QCString &docs)
                               ),dir.end());
       unsigned char ioMask=0;
       size_t inIndex  = dir.find( "in");
-      size_t outIndex = dir.find("out");
       if ( inIndex!=std::string::npos) dir.erase( inIndex,2),ioMask|=(1<<0);
+      size_t outIndex = dir.find("out");
       if (outIndex!=std::string::npos) dir.erase(outIndex,3),ioMask|=(1<<1);
       if (dir.empty() && ioMask!=0) // only in and/or out attributes found
       {
