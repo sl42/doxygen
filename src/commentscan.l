@@ -572,6 +572,7 @@ static inline const char *getLexerFILE() {return __FILE__;}
 CMD       ("\\"|"@")
 PRE       ("pre"|"PRE")
 TABLE     ("table"|"TABLE")
+TABLEDEL  ("table"|"tr"|"th"|"td"|"TABLE"|"TR"|"TH"|"TD")
 P         [pP]
 UL        ("ul"|"UL")
 OL        ("ol"|"OL")
@@ -966,7 +967,7 @@ STopt  [^\n@\\]*
 <Comment>{B}*{CMD}[a-z_A-Z]+"{"[^}]*"}"{B}*  |
 <Comment>{B}*{CMD}[a-z_A-Z]+{B}*        { // potentially interesting command
                                           // the {B}* in the front was added for bug620924
-                                          QCString fullMatch = QCString(yytext);
+                                          QCString fullMatch = yytext;
                                           int idx = fullMatch.find('{');
                                           /* handle `f{` command as special case */
                                           if ((idx > 1) && (yytext[idx-1] == 'f') && (yytext[idx-2] == '\\' || yytext[idx-2] =='@')) REJECT;
@@ -975,7 +976,7 @@ STopt  [^\n@\\]*
                                           StringVector optList;
                                           if (idx == -1) // no options
                                           {
-                                            cmdName = QCString(yytext).stripWhiteSpace().mid(1); // to remove {CMD}
+                                            cmdName = fullMatch.stripWhiteSpace().mid(1); // to remove {CMD}
                                           }
                                           else // options present
                                           {
@@ -989,7 +990,7 @@ STopt  [^\n@\\]*
                                           {
                                             int i=0;
                                             while (yytext[i]==' ' || yytext[i]=='\t') i++;
-                                            yyextra->spaceBeforeCmd = QCString(yytext).left(i);
+                                            yyextra->spaceBeforeCmd = fullMatch.left(i);
                                             CommandSpacing spacing = it->second.spacing;
                                             if ((spacing==CommandSpacing::Block || spacing==CommandSpacing::XRef) &&
                                                 !(yyextra->inContext==OutputXRef && cmdName=="parblock"))
@@ -1213,6 +1214,17 @@ STopt  [^\n@\\]*
                                           addOutput(yyscanner,yytext);
                                           if (*yytext == '\n') yyextra->lineNr++;
                                         }
+<Comment>"<"[/]?{TABLEDEL}">"           { // In case in xrefitem type some special handling is required
+                                          if (yyextra->inContext==OutputXRef)
+                                          {
+                                            setOutput(yyscanner,OutputDoc);
+                                            addOutput(yyscanner,yytext);
+                                          }
+                                          else
+                                          {
+                                            REJECT;
+                                          }
+                                        }
 <Comment>.                              { // catch-all for anything else
                                           addOutput(yyscanner,*yytext);
                                         }
@@ -1335,7 +1347,7 @@ STopt  [^\n@\\]*
 <NameSpaceDocArg1>{SCOPENAME}           { // handle argument
                                           makeStructuralIndicator(yyscanner,yyextra->currentMakeEntryType);
                                           lineCount(yyscanner);
-                                          yyextra->current->name = substitute(removeRedundantWhiteSpace(QCString(yytext)),QCString("."),QCString("::"));
+                                          yyextra->current->name = substitute(removeRedundantWhiteSpace(yytext),".","::");
                                           BEGIN( Comment );
                                         }
 <NameSpaceDocArg1>{LC}                  { // line continuation
@@ -1420,13 +1432,13 @@ STopt  [^\n@\\]*
 <ClassDocArg1>{SCOPENAME}{TMPLSPEC}     {
                                           makeStructuralIndicator(yyscanner,yyextra->currentMakeEntryType);
                                           lineCount(yyscanner);
-                                          yyextra->current->name = substitute(removeRedundantWhiteSpace(QCString(yytext)),".","::");
+                                          yyextra->current->name = substitute(removeRedundantWhiteSpace(yytext),".","::");
                                           BEGIN( ClassDocArg2 );
                                         }
 <ClassDocArg1>{SCOPENAME}               { // first argument
                                           makeStructuralIndicator(yyscanner,yyextra->currentMakeEntryType);
                                           lineCount(yyscanner);
-                                          yyextra->current->name = substitute(QCString(yytext),".","::");
+                                          yyextra->current->name = substitute(yytext,".","::");
                                           if (yyextra->current->section.isProtocolDoc())
                                           {
                                             yyextra->current->name+="-p";
@@ -1437,7 +1449,7 @@ STopt  [^\n@\\]*
 <CategoryDocArg1>{SCOPENAME}{B}*"("[^\)]+")" {
                                           makeStructuralIndicator(yyscanner,yyextra->currentMakeEntryType);
                                           lineCount(yyscanner);
-                                          yyextra->current->name = substitute(QCString(yytext),".","::");
+                                          yyextra->current->name = substitute(yytext,".","::");
                                           BEGIN( ClassDocArg2 );
                                         }
 <ClassDocArg1,CategoryDocArg1>{LC}      { // line continuation
@@ -1487,7 +1499,7 @@ STopt  [^\n@\\]*
 
   /* --------- handle arguments of {def,add,weak}group commands --------- */
 
-<GroupDocArg1>{LABELID}(".html"?)       { // group name
+<GroupDocArg1>{LABELID}(".html"|".xhtml")? { // group name
                                            yyextra->current->name = yytext;
                                           //lastDefGroup.groupname = yytext;
                                           //lastDefGroup.pri = yyextra->current->groupingPri();
@@ -1495,6 +1507,10 @@ STopt  [^\n@\\]*
                                           if (yyextra->current->name.endsWith(".html"))
                                           {
                                             yyextra->current->name=yyextra->current->name.left(yyextra->current->name.length()-5);
+                                          }
+                                          else if (yyextra->current->name.endsWith(".xhtml"))
+                                          {
+                                            yyextra->current->name=yyextra->current->name.left(yyextra->current->name.length()-6);
                                           }
                                           yyextra->current->type.clear();
                                           BEGIN(GroupDocArg2);
@@ -1521,9 +1537,9 @@ STopt  [^\n@\\]*
                                         }
 <GroupDocArg2>[^\n\\]+                  { // title (stored in type)
                                           yyextra->current->type += yytext;
-                                          yyextra->current->type = yyextra->current->type.stripWhiteSpace();
                                         }
 <GroupDocArg2>{DOCNL}+                  {
+                                          yyextra->current->type = yyextra->current->type.stripWhiteSpace();
                                           if ( yyextra->current->groupDocType==Entry::GROUPDOC_NORMAL &&
                                                yyextra->current->type.isEmpty()
                                              ) // defgroup requires second argument
@@ -1553,7 +1569,6 @@ STopt  [^\n@\\]*
                                         }
 <GroupDocArg2>.                         { // title (stored in type)
                                           yyextra->current->type += yytext;
-                                          yyextra->current->type = yyextra->current->type.stripWhiteSpace();
                                         }
 
   /* --------- handle arguments of page/mainpage command ------------------- */
@@ -1976,7 +1991,7 @@ STopt  [^\n@\\]*
                                         }
 <SectionTitle>{B}*{CMD}[a-z_A-Z]+"{"[^}]*"}"{B}*  |
 <SectionTitle>{B}*{CMD}[a-z_A-Z]+{B}*   { // handling command in section title
-                                          QCString fullMatch = QCString(yytext);
+                                          QCString fullMatch = yytext;
                                           int idx = fullMatch.find('{');
                                           /* handle `f{` command as special case */
                                           if ((idx > 1) && (yytext[idx-1] == 'f') && (yytext[idx-2] == '\\' || yytext[idx-2] =='@')) REJECT;
@@ -1985,7 +2000,7 @@ STopt  [^\n@\\]*
                                           StringVector optList;
                                           if (idx == -1) // no options
                                           {
-                                            cmdName = QCString(yytext).stripWhiteSpace().mid(1); // to remove {CMD}
+                                            cmdName = fullMatch.stripWhiteSpace().mid(1); // to remove {CMD}
                                           }
                                           else // options present
                                           {
@@ -2139,7 +2154,7 @@ STopt  [^\n@\\]*
                                           addOutput(yyscanner,yytext);
                                           // we add subpage labels as a kind of "inheritance" relation to prevent
                                           // needing to add another list to the Entry class.
-                                          yyextra->current->extends.emplace_back(QCString(yytext),Protection::Public,Specifier::Normal);
+                                          yyextra->current->extends.emplace_back(yytext,Protection::Public,Specifier::Normal);
                                           BEGIN(SubpageTitle);
                                         }
 <SubpageLabel>{DOCNL}                   { // missing argument
@@ -2306,7 +2321,7 @@ STopt  [^\n@\\]*
                                           BEGIN(GuardParam);
                                         }
 <GuardParam>{B}*[a-z_A-Z0-9.\-]+        { // parameter of if/ifnot yyextra->guards
-                                          handleGuard(yyscanner,QCString(yytext));
+                                          handleGuard(yyscanner,yytext);
                                         }
 <GuardParam>{DOCNL}                     { // end of argument
                                           //next line is commented out due to bug620924
@@ -2462,13 +2477,13 @@ STopt  [^\n@\\]*
                                           if (*yytext=='\n') yyextra->lineNr++;
                                           addOutput(yyscanner,'\n');
                                         }
-<SkipInternal>[@\\]"if"/[ \t]           {
+<SkipInternal>{CMD}"if"/[ \t]           {
                                           yyextra->condCount++;
                                           }
-<SkipInternal>[@\\]"ifnot"/[ \t]        {
+<SkipInternal>{CMD}"ifnot"/[ \t]        {
                                           yyextra->condCount++;
                                         }
-<SkipInternal>[@\\]/"endif"             {
+<SkipInternal>{CMD}/"endif"             {
                                           yyextra->condCount--;
                                           if (yyextra->condCount<0) // handle conditional section around of \internal, see bug607743
                                           {
@@ -2476,49 +2491,49 @@ STopt  [^\n@\\]*
                                             BEGIN(Comment);
                                           }
                                         }
-<SkipInternal>[@\\]/"section"[ \t]      {
+<SkipInternal>{CMD}/"section"[ \t]      {
                                           if (yyextra->sectionLevel>0)
                                           {
                                             unput('\\');
                                             BEGIN(Comment);
                                           }
                                         }
-<SkipInternal>[@\\]/"subsection"[ \t]   {
+<SkipInternal>{CMD}/"subsection"[ \t]   {
                                           if (yyextra->sectionLevel>1)
                                           {
                                             unput('\\');
                                             BEGIN(Comment);
                                           }
                                         }
-<SkipInternal>[@\\]/"subsubsection"[ \t] {
+<SkipInternal>{CMD}/"subsubsection"[ \t] {
                                           if (yyextra->sectionLevel>2)
                                           {
                                             unput('\\');
                                             BEGIN(Comment);
                                           }
                                         }
-<SkipInternal>[@\\]/"paragraph"[ \t]    {
+<SkipInternal>{CMD}/"paragraph"[ \t]    {
                                           if (yyextra->sectionLevel>3)
                                           {
                                             unput('\\');
                                             BEGIN(Comment);
                                           }
                                         }
-<SkipInternal>[@\\]/"subparagraph"[ \t] {
+<SkipInternal>{CMD}/"subparagraph"[ \t] {
                                           if (yyextra->sectionLevel>4)
                                           {
                                             unput('\\');
                                             BEGIN(Comment);
                                           }
                                         }
-<SkipInternal>[@\\]/"subsubparagraph"[ \t] {
+<SkipInternal>{CMD}/"subsubparagraph"[ \t] {
                                           if (yyextra->sectionLevel>5)
                                           {
                                             unput('\\');
                                             BEGIN(Comment);
                                           }
                                         }
-<SkipInternal>[@\\]"endinternal"[ \t]*  {
+<SkipInternal>{CMD}"endinternal"[ \t]*  {
                                           BEGIN(Comment);
                                         }
 <SkipInternal>[^ \\@\n]+                { // skip non-special characters
@@ -2580,7 +2595,7 @@ STopt  [^\n@\\]*
 
 <InGroupParam>{LABELID}                 { // group id
                                           yyextra->current->groups.emplace_back(
-                                             QCString(yytext), Grouping::GROUPING_INGROUP
+                                             yytext, Grouping::GROUPING_INGROUP
                                           );
                                           yyextra->inGroupParamFound=TRUE;
                                         }
@@ -2673,7 +2688,7 @@ STopt  [^\n@\\]*
 
 <InheritParam>({ID}("::"|"."))*{ID}     { // found argument
                                           yyextra->current->extends.emplace_back(
-                                            removeRedundantWhiteSpace(QCString(yytext)),Protection::Public,Specifier::Normal
+                                            removeRedundantWhiteSpace(yytext),Protection::Public,Specifier::Normal
                                           );
                                           BEGIN( Comment );
                                         }
@@ -2696,7 +2711,7 @@ STopt  [^\n@\\]*
 
 <ExtendsParam>({ID}("::"|"."))*{ID}     { // found argument
                                           yyextra->current->extends.emplace_back(
-                                            removeRedundantWhiteSpace(QCString(yytext)),Protection::Public,Specifier::Normal
+                                            removeRedundantWhiteSpace(yytext),Protection::Public,Specifier::Normal
                                           );
                                           BEGIN( Comment );
                                         }
@@ -2714,7 +2729,7 @@ STopt  [^\n@\\]*
 
   /* ----- handle language specific sections ------- */
 
-<SkipLang>[\\@]"~"[a-zA-Z-]*            { /* language switch */
+<SkipLang>{CMD}"~"[a-zA-Z-]*            { /* language switch */
                                           QCString langId(&yytext[2]);
                                           if (!langId.isEmpty() && !Config_isAvailableEnum(OUTPUT_LANGUAGE,langId))
                                           {
@@ -2792,6 +2807,16 @@ STopt  [^\n@\\]*
                                           addOutput(yyscanner,"\n");
                                           BEGIN(Comment);
                                         }
+<CopyDoc>"<"[/]?{TABLEDEL}">"           {
+                                          if (yyextra->braceCount==0)
+                                          {
+                                            setOutput(yyscanner,OutputDoc);
+                                            addOutput(yyscanner," \\ilinebr\\ilinebr\\copydetails ");
+                                            addOutput(yyscanner,yyextra->copyDocArg);
+                                            addOutput(yyscanner,yytext);
+                                            BEGIN(Comment);
+                                          }
+                                        }
 <CopyDoc>{DOCNL}                        {
                                           if (*yytext=='\n') yyextra->lineNr++;
                                           if (yyextra->braceCount==0)
@@ -2806,7 +2831,7 @@ STopt  [^\n@\\]*
 <CopyDoc>{LC}                           { // line continuation
                                           yyextra->lineNr++;
                                         }
-<CopyDoc>[^@\\\n()]+                    { // non-special characters
+<CopyDoc>[^@\\\n()<]+                   { // non-special characters
                                           yyextra->copyDocArg+=yytext;
                                           addOutput(yyscanner,yytext);
                                         }
@@ -3352,7 +3377,7 @@ static bool handleImage(yyscan_t yyscanner,const QCString &s, const StringVector
   return FALSE;
 }
 
-static bool handleCite(yyscan_t yyscanner,const QCString &s, const StringVector &)
+static bool handleCite(yyscan_t yyscanner,const QCString &s, const StringVector &optList)
 {
   struct yyguts_t *yyg = (struct yyguts_t*)yyscanner;
   if (!yyextra->spaceBeforeCmd.isEmpty())
@@ -3360,7 +3385,14 @@ static bool handleCite(yyscan_t yyscanner,const QCString &s, const StringVector 
     addOutput(yyscanner,yyextra->spaceBeforeCmd);
     yyextra->spaceBeforeCmd.clear();
   }
-  addOutput(yyscanner,"@"+s+" ");
+  if (optList.empty())
+  {
+    addOutput(yyscanner,"@"+s+" ");
+  }
+  else
+  {
+    addOutput(yyscanner,"@"+s+"{"+QCString(join(optList,","))+"} ");
+  }
   BEGIN(CiteLabel);
   return FALSE;
 }
@@ -4284,7 +4316,7 @@ static QCString addFormula(yyscan_t yyscanner)
   //    qPrint(yyextra->formulaText.stripLeadingAndTrailingEmptyLines()),
   //    qPrint(formula)
   //    );
-  int id = FormulaManager::instance().addFormula(formula.str());
+  int id = FormulaManager::instance().addFormula(formula);
   formLabel.sprintf("\\_form#%d",id);
   for (int i=0;i<yyextra->formulaNewLines;i++) formLabel+="@_fakenl"; // add fake newlines to
                                                          // keep the warnings

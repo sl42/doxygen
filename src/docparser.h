@@ -23,6 +23,7 @@
 #include "growvector.h"
 #include "construct.h"
 #include "types.h"
+#include "config.h"
 
 class MemberDef;
 class Definition;
@@ -75,6 +76,7 @@ using IDocNodeASTPtr = std::unique_ptr<IDocNodeAST>;
  *                   the relative path when making a link.
  *  @param markdownSupport TRUE if the input needs to take markdown markup into
  *                   account.
+ *  @param autolinkSupport TRUE if the input need to perform auto linking of words
  *  @returns         An object representing the abstract syntax tree. Ownership of the
  *                   pointer is handed over to the caller.
  */
@@ -83,12 +85,19 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,const QCString &fileNam
                             const QCString &input,bool indexWords,
                             bool isExample,const QCString &exampleName,
                             bool singleLine,bool linkFromIndex,
-                            bool markdownSupport);
+                            bool markdownSupport = Config_getBool(MARKDOWN_SUPPORT),
+                            bool autolinkSupport = Config_getBool(AUTOLINK_SUPPORT));
 
 /*! Main entry point for parsing simple text fragments. These
  *  fragments are limited to words, whitespace and symbols.
  */
 IDocNodeASTPtr validatingParseText(IDocParser &parser,const QCString &input);
+
+
+/*! Main entry point for parsing titles. These allow limited markup commands */
+IDocNodeASTPtr validatingParseTitle(IDocParser &parserIntf,const QCString &fileName,int lineNr,
+                                    const QCString &input);
+
 
 IDocNodeASTPtr createRef(IDocParser &parser,const QCString &target,const QCString &context, const QCString &srcFile = "", int srcLine = -1);
 

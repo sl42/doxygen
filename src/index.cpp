@@ -344,8 +344,6 @@ const int maxItemsBeforeQuickIndex = MAX_ITEMS_BEFORE_QUICK_INDEX;
 
 //----------------------------------------------------------------------------
 
-//----------------------------------------------------------------------------
-
 static void startQuickIndexList(OutputList &ol,bool letterTabs=FALSE)
 {
   if (letterTabs)
@@ -387,8 +385,9 @@ static void endQuickIndexItem(OutputList &ol)
 
 void startTitle(OutputList &ol,const QCString &fileName,const DefinitionMutable *def)
 {
+  bool generateOutlinePanel = Config_getBool(GENERATE_TREEVIEW) && Config_getBool(PAGE_OUTLINE_PANEL);
   ol.startHeaderSection();
-  if (def) def->writeSummaryLinks(ol);
+  if (!generateOutlinePanel && def) def->writeSummaryLinks(ol);
   ol.startTitleHead(fileName);
   ol.pushGeneratorState();
   ol.disable(OutputType::Man);
@@ -403,12 +402,15 @@ void endTitle(OutputList &ol,const QCString &fileName,const QCString &name)
 
 void startFile(OutputList &ol,const QCString &name,const QCString &manName,
                const QCString &title,HighlightedItem hli,bool additionalIndices,
-               const QCString &altSidebarName, int hierarchyLevel)
+               const QCString &altSidebarName, int hierarchyLevel, const QCString &allMembersFile)
 {
-  bool disableIndex = Config_getBool(DISABLE_INDEX);
+  bool disableIndex     = Config_getBool(DISABLE_INDEX);
+  bool generateTreeView = Config_getBool(GENERATE_TREEVIEW);
+  bool fullSidebar      = Config_getBool(FULL_SIDEBAR);
+  bool quickLinksAfterSplitbar = !disableIndex && generateTreeView && fullSidebar;
   ol.startFile(name,manName,title,hierarchyLevel);
   ol.startQuickIndices();
-  if (!disableIndex)
+  if (!disableIndex && !quickLinksAfterSplitbar)
   {
     ol.writeQuickLinks(hli,name);
   }
@@ -416,7 +418,11 @@ void startFile(OutputList &ol,const QCString &name,const QCString &manName,
   {
     ol.endQuickIndices();
   }
-  ol.writeSplitBar(!altSidebarName.isEmpty() ? altSidebarName : name);
+  ol.writeSplitBar(!altSidebarName.isEmpty() ? altSidebarName : name, allMembersFile);
+  if (quickLinksAfterSplitbar)
+  {
+    ol.writeQuickLinks(hli,name);
+  }
   ol.writeSearchInfo();
 }
 
@@ -432,6 +438,7 @@ void endFile(OutputList &ol,bool skipNavIndex,bool skipEndContents,
     if (generateTreeView)
     {
       ol.writeString("</div><!-- doc-content -->\n");
+      ol.writeString("</div><!-- container -->\n");
     }
   }
 
@@ -440,19 +447,22 @@ void endFile(OutputList &ol,bool skipNavIndex,bool skipEndContents,
   ol.endFile();
 }
 
-void endFileWithNavPath(OutputList &ol,const Definition *d)
+void endFileWithNavPath(OutputList &ol,const DefinitionMutable *d,bool showPageNavigation)
 {
-  bool generateTreeView = Config_getBool(GENERATE_TREEVIEW);
+  bool generateTreeview = Config_getBool(GENERATE_TREEVIEW);
+  bool generateOutlinePanel = Config_getBool(PAGE_OUTLINE_PANEL);
   QCString navPath;
-  if (generateTreeView)
+  if (generateTreeview)
   {
     ol.pushGeneratorState();
     ol.disableAllBut(OutputType::Html);
     ol.writeString("</div><!-- doc-content -->\n");
+    if (generateOutlinePanel && showPageNavigation) d->writePageNavigation(ol);
+    ol.writeString("</div><!-- container -->\n");
     ol.popGeneratorState();
-    navPath = d->navigationPathAsString();
+    navPath = toDefinition(const_cast<DefinitionMutable*>(d))->navigationPathAsString();
   }
-  endFile(ol,generateTreeView,TRUE,navPath);
+  endFile(ol,generateTreeview,TRUE,navPath);
 }
 
 //----------------------------------------------------------------------
@@ -1180,7 +1190,7 @@ static void writeHierarchicalIndex(OutputList &ol)
     ftv.generateTreeViewInline(t);
     ol.pushGeneratorState();
     ol.disableAllBut(OutputType::Html);
-    ol.writeString(t.str().c_str());
+    ol.writeString(t.str());
     ol.popGeneratorState();
   }
   ol.popGeneratorState();
@@ -1285,7 +1295,7 @@ static void writeHierarchicalInterfaceIndex(OutputList &ol)
     ftv.generateTreeViewInline(t);
     ol.pushGeneratorState();
     ol.disableAllBut(OutputType::Html);
-    ol.writeString(t.str().c_str());
+    ol.writeString(t.str());
     ol.popGeneratorState();
   }
   ol.popGeneratorState();
@@ -1390,7 +1400,7 @@ static void writeHierarchicalExceptionIndex(OutputList &ol)
     ftv.generateTreeViewInline(t);
     ol.pushGeneratorState();
     ol.disableAllBut(OutputType::Html);
-    ol.writeString(t.str().c_str());
+    ol.writeString(t.str());
     ol.popGeneratorState();
   }
   ol.popGeneratorState();
@@ -1512,8 +1522,7 @@ static void writeSingleFileIndex(OutputList &ol,const FileDef *fd)
           FALSE, // isExample
           QCString(), // example name
           TRUE,  // single line
-          TRUE,  // link from index
-          Config_getBool(MARKDOWN_SUPPORT)
+          TRUE   // link from index
           );
       //ol.docify(")");
     }
@@ -1528,6 +1537,34 @@ static void writeSingleFileIndex(OutputList &ol,const FileDef *fd)
     //ol.popGeneratorState();
     // --------------------------------------------------------
   }
+}
+//----------------------------------------------------------------------------
+
+static void writeDirIndex(OutputList &ol)
+{
+  if (Index::instance().numDocumentedDirs()==0) return;
+  ol.pushGeneratorState();
+  ol.disable(OutputType::Html);
+
+  QCString title = theTranslator->trDirectories();
+  startFile(ol,"dirs",QCString(),title,HighlightedItem::Files);
+  startTitle(ol,title);
+  ol.parseText(title);
+  endTitle(ol,QCString(),QCString());
+
+  ol.startIndexList();
+  for (const auto &dir : *Doxygen::dirLinkedMap)
+  {
+    if (dir->hasDocumentation())
+    {
+      writeDirTreeNode(ol, dir.get(), 1, nullptr, false);
+    }
+  }
+
+  ol.endIndexList();
+
+  endFile(ol);
+  ol.popGeneratorState();
 }
 
 //----------------------------------------------------------------------------
@@ -1644,7 +1681,7 @@ static void writeFileIndex(OutputList &ol)
     writeDirHierarchy(ol,&ftv,addToIndex);
     TextStream t;
     ftv.generateTreeViewInline(t);
-    ol.writeString(t.str().c_str());
+    ol.writeString(t.str());
   }
 
   ol.popGeneratorState();
@@ -2046,8 +2083,7 @@ static void writeNamespaceIndex(OutputList &ol)
                  FALSE, // isExample
                  QCString(),     // example name
                  TRUE,  // single line
-                 TRUE,  // link from index
-                 Config_getBool(MARKDOWN_SUPPORT)
+                 TRUE   // link from index
                 );
         //ol.docify(")");
       }
@@ -2075,7 +2111,7 @@ static void writeNamespaceIndex(OutputList &ol)
     writeNamespaceTree(*Doxygen::namespaceLinkedMap,&ftv,TRUE,addToIndex);
     TextStream t;
     ftv.generateTreeViewInline(t);
-    ol.writeString(t.str().c_str());
+    ol.writeString(t.str());
     if (addToIndex)
     {
       Doxygen::indexList->decContentsDepth();
@@ -2174,8 +2210,7 @@ static void writeAnnotatedClassList(OutputList &ol,ClassDef::CompoundType ct)
                  FALSE,  // isExample
                  QCString(),     // example name
                  TRUE,  // single line
-                 TRUE,  // link from index
-                 Config_getBool(MARKDOWN_SUPPORT)
+                 TRUE   // link from index
                 );
       }
       ol.endIndexValue(cd->getOutputFileBase(),hasBrief);
@@ -2278,10 +2313,10 @@ static void writeAlphabeticalClassList(OutputList &ol, ClassDef::CompoundType ct
   {
     if (!first) alphaLinks += "&#160;|&#160;";
     first=false;
-    QCString li = letterToLabel(letter.c_str());
+    QCString li = letterToLabel(letter);
     alphaLinks += "<a class=\"qindex\" href=\"#letter_" +
                   li + "\">" +
-                  QCString(letter) + "</a>";
+                  letter + "</a>";
   }
   alphaLinks += "</div>\n";
   ol.writeString(alphaLinks);
@@ -2343,13 +2378,13 @@ static void writeAlphabeticalClassList(OutputList &ol, ClassDef::CompoundType ct
 
       // write character heading
       ol.writeString("<dt class=\"alphachar\">");
-      QCString s = letterToLabel(cl.first.c_str());
+      QCString s = letterToLabel(cl.first);
       ol.writeString("<a id=\"letter_");
       ol.writeString(s);
       ol.writeString("\" name=\"letter_");
       ol.writeString(s);
       ol.writeString("\">");
-      ol.writeString(cl.first.c_str());
+      ol.writeString(cl.first);
       ol.writeString("</a>");
       ol.writeString("</dt>\n");
 
@@ -2600,7 +2635,7 @@ static void writeAnnotatedIndexGeneric(OutputList &ol,const AnnotatedIndexContex
     writeClassTree(*Doxygen::classLinkedMap,&ftv,addToIndex,TRUE,ctx.compoundType);
     TextStream t;
     ftv.generateTreeViewInline(t);
-    ol.writeString(t.str().c_str());
+    ol.writeString(t.str());
     if (addToIndex)
     {
       Doxygen::indexList->decContentsDepth();
@@ -2783,9 +2818,9 @@ static void writeMemberList(OutputList &ol,bool useSections,const std::string &p
         {
           if (!firstItem)    ol.endItemListItem();
           if (!firstSection) ol.endItemList();
-          QCString cs = letterToLabel(letter.c_str());
-          QCString anchor=QCString("index_")+convertToId(cs);
-          QCString title=QCString("- ")+letter.c_str()+" -";
+          QCString cs     = letterToLabel(letter);
+          QCString anchor = "index_"+convertToId(cs);
+          QCString title  = "- "+letter+" -";
           ol.startSection(anchor,title,SectionType::Subsection);
           ol.docify(title);
           ol.endSection(anchor,SectionType::Subsection);
@@ -2851,9 +2886,9 @@ void Index::addClassMemberNameToIndex(const MemberDef *md)
     {
       letter = convertUTF8ToLower(letter);
       bool isFriendToHide = hideFriendCompounds &&
-        (QCString(md->typeString())=="friend class" ||
-         QCString(md->typeString())=="friend struct" ||
-         QCString(md->typeString())=="friend union");
+        (md->typeString()=="friend class" ||
+         md->typeString()=="friend struct" ||
+         md->typeString()=="friend union");
       if (!(md->isFriend() && isFriendToHide) &&
           (!md->isEnumValue() || (md->getEnumScope() && !md->getEnumScope()->isStrong()))
          )
@@ -3129,6 +3164,10 @@ static void writeClassMemberIndexFiltered(OutputList &ol, ClassMemberHighlight::
   if (index.numDocumentedClassMembers(hl)==0) return;
 
   bool disableIndex     = Config_getBool(DISABLE_INDEX);
+  bool generateTreeView = Config_getBool(GENERATE_TREEVIEW);
+  bool fullSidebar      = Config_getBool(FULL_SIDEBAR);
+  bool dynamicMenus     = Config_getBool(HTML_DYNAMIC_MENUS);
+  bool quickLinksAfterSplitbar = !disableIndex && generateTreeView && fullSidebar;
 
   bool multiPageIndex=FALSE;
   if (index.numDocumentedClassMembers(hl)>MAX_ITEMS_BEFORE_MULTIPAGE_INDEX)
@@ -3168,14 +3207,13 @@ static void writeClassMemberIndexFiltered(OutputList &ol, ClassMemberHighlight::
         Doxygen::indexList->addContentsItem(FALSE,cs,QCString(),fileName,QCString(),FALSE,TRUE);
       }
     }
+
     bool quickIndex = index.numDocumentedClassMembers(hl)>maxItemsBeforeQuickIndex;
 
-    ol.startFile(fileName+extension,QCString(),title);
-    ol.startQuickIndices();
-    if (!disableIndex)
+    auto writeQuickLinks = [&,cap_letter=letter]()
     {
-      ol.writeQuickLinks(HighlightedItem::Functions,QCString());
-      if (!Config_getBool(HTML_DYNAMIC_MENUS))
+      ol.writeQuickLinks(HighlightedItem::Functions,QCString(),!dynamicMenus);
+      if (!dynamicMenus)
       {
         startQuickIndexList(ol);
 
@@ -3203,13 +3241,31 @@ static void writeClassMemberIndexFiltered(OutputList &ol, ClassMemberHighlight::
         // quick alphabetical index
         if (quickIndex)
         {
-          writeQuickMemberIndex(ol,index.isClassIndexLetterUsed(hl),letter,
+          writeQuickMemberIndex(ol,index.isClassIndexLetterUsed(hl),cap_letter,
               getCmhlInfo(hl)->fname,multiPageIndex);
         }
+
+        ol.writeString("</div><!-- main-nav -->\n");
       }
+    };
+
+    ol.startFile(fileName+extension,QCString(),title);
+    ol.startQuickIndices();
+    if (!disableIndex && !quickLinksAfterSplitbar)
+    {
+      writeQuickLinks();
     }
     ol.endQuickIndices();
-    ol.writeSplitBar(fileName);
+    ol.writeSplitBar(fileName,QCString());
+    if (quickLinksAfterSplitbar)
+    {
+      writeQuickLinks();
+      if (!dynamicMenus)
+      {
+         ol.writeString("<div id=\"container\">\n");
+         ol.writeString("<div id=\"doc-content\">\n");
+      }
+    }
     ol.writeSearchInfo();
 
     ol.startContents();
@@ -3297,6 +3353,10 @@ static void writeFileMemberIndexFiltered(OutputList &ol, FileMemberHighlight::En
   if (index.numDocumentedFileMembers(hl)==0) return;
 
   bool disableIndex     = Config_getBool(DISABLE_INDEX);
+  bool generateTreeView = Config_getBool(GENERATE_TREEVIEW);
+  bool fullSidebar      = Config_getBool(FULL_SIDEBAR);
+  bool dynamicMenus     = Config_getBool(HTML_DYNAMIC_MENUS);
+  bool quickLinksAfterSplitbar = !disableIndex && generateTreeView && fullSidebar;
 
   bool multiPageIndex=FALSE;
   if (Index::instance().numDocumentedFileMembers(hl)>MAX_ITEMS_BEFORE_MULTIPAGE_INDEX)
@@ -3335,14 +3395,13 @@ static void writeFileMemberIndexFiltered(OutputList &ol, FileMemberHighlight::En
         Doxygen::indexList->addContentsItem(FALSE,cs,QCString(),fileName,QCString(),FALSE,TRUE);
       }
     }
+
     bool quickIndex = index.numDocumentedFileMembers(hl)>maxItemsBeforeQuickIndex;
 
-    ol.startFile(fileName+extension,QCString(),title);
-    ol.startQuickIndices();
-    if (!disableIndex)
+    auto writeQuickLinks = [&,cap_letter=letter]()
     {
-      ol.writeQuickLinks(HighlightedItem::Globals,QCString());
-      if (!Config_getBool(HTML_DYNAMIC_MENUS))
+      ol.writeQuickLinks(HighlightedItem::Globals,QCString(),!dynamicMenus);
+      if (!dynamicMenus)
       {
         startQuickIndexList(ol);
 
@@ -3368,13 +3427,31 @@ static void writeFileMemberIndexFiltered(OutputList &ol, FileMemberHighlight::En
 
         if (quickIndex)
         {
-          writeQuickMemberIndex(ol,index.isFileIndexLetterUsed(hl),letter,
+          writeQuickMemberIndex(ol,index.isFileIndexLetterUsed(hl),cap_letter,
               getFmhlInfo(hl)->fname,multiPageIndex);
         }
+
+        ol.writeString("</div><!-- main-nav -->\n");
       }
+    };
+
+    ol.startFile(fileName+extension,QCString(),title);
+    ol.startQuickIndices();
+    if (!disableIndex && !quickLinksAfterSplitbar)
+    {
+      writeQuickLinks();
     }
     ol.endQuickIndices();
-    ol.writeSplitBar(fileName);
+    ol.writeSplitBar(fileName,QCString());
+    if (quickLinksAfterSplitbar)
+    {
+      writeQuickLinks();
+      if (!dynamicMenus)
+      {
+         ol.writeString("<div id=\"container\">\n");
+         ol.writeString("<div id=\"doc-content\">\n");
+      }
+    }
     ol.writeSearchInfo();
 
     ol.startContents();
@@ -3460,7 +3537,10 @@ static void writeNamespaceMemberIndexFiltered(OutputList &ol,
   if (index.numDocumentedNamespaceMembers(hl)==0) return;
 
   bool disableIndex     = Config_getBool(DISABLE_INDEX);
-
+  bool generateTreeView = Config_getBool(GENERATE_TREEVIEW);
+  bool fullSidebar      = Config_getBool(FULL_SIDEBAR);
+  bool dynamicMenus     = Config_getBool(HTML_DYNAMIC_MENUS);
+  bool quickLinksAfterSplitbar = !disableIndex && generateTreeView && fullSidebar;
 
   bool multiPageIndex=FALSE;
   if (index.numDocumentedNamespaceMembers(hl)>MAX_ITEMS_BEFORE_MULTIPAGE_INDEX)
@@ -3499,14 +3579,13 @@ static void writeNamespaceMemberIndexFiltered(OutputList &ol,
         Doxygen::indexList->addContentsItem(FALSE,cs,QCString(),fileName,QCString(),FALSE,TRUE);
       }
     }
+
     bool quickIndex = index.numDocumentedNamespaceMembers(hl)>maxItemsBeforeQuickIndex;
 
-    ol.startFile(fileName+extension,QCString(),title);
-    ol.startQuickIndices();
-    if (!disableIndex)
+    auto writeQuickLinks = [&,cap_letter=letter]()
     {
-      ol.writeQuickLinks(HighlightedItem::NamespaceMembers,QCString());
-      if (!Config_getBool(HTML_DYNAMIC_MENUS))
+      ol.writeQuickLinks(HighlightedItem::NamespaceMembers,QCString(),!dynamicMenus);
+      if (!dynamicMenus)
       {
         startQuickIndexList(ol);
 
@@ -3532,13 +3611,31 @@ static void writeNamespaceMemberIndexFiltered(OutputList &ol,
 
         if (quickIndex)
         {
-          writeQuickMemberIndex(ol,index.isNamespaceIndexLetterUsed(hl),letter,
+          writeQuickMemberIndex(ol,index.isNamespaceIndexLetterUsed(hl),cap_letter,
               getNmhlInfo(hl)->fname,multiPageIndex);
         }
+
+        ol.writeString("</div><!-- main-nav -->\n");
       }
+    };
+
+    ol.startFile(fileName+extension,QCString(),title);
+    ol.startQuickIndices();
+    if (!disableIndex && !quickLinksAfterSplitbar)
+    {
+      writeQuickLinks();
     }
     ol.endQuickIndices();
-    ol.writeSplitBar(fileName);
+    ol.writeSplitBar(fileName,QCString());
+    if (quickLinksAfterSplitbar)
+    {
+      writeQuickLinks();
+      if (!dynamicMenus)
+      {
+         ol.writeString("<div id=\"container\">\n");
+         ol.writeString("<div id=\"doc-content\">\n");
+      }
+    }
     ol.writeSearchInfo();
 
     ol.startContents();
@@ -3617,7 +3714,10 @@ static void writeModuleMemberIndexFiltered(OutputList &ol,
   if (index.numDocumentedModuleMembers(hl)==0) return;
 
   bool disableIndex     = Config_getBool(DISABLE_INDEX);
-
+  bool generateTreeView = Config_getBool(GENERATE_TREEVIEW);
+  bool fullSidebar      = Config_getBool(FULL_SIDEBAR);
+  bool dynamicMenus     = Config_getBool(HTML_DYNAMIC_MENUS);
+  bool quickLinksAfterSplitbar = !disableIndex && generateTreeView && fullSidebar;
 
   bool multiPageIndex=FALSE;
   if (index.numDocumentedModuleMembers(hl)>MAX_ITEMS_BEFORE_MULTIPAGE_INDEX)
@@ -3656,14 +3756,13 @@ static void writeModuleMemberIndexFiltered(OutputList &ol,
         Doxygen::indexList->addContentsItem(FALSE,cs,QCString(),fileName,QCString(),FALSE,TRUE);
       }
     }
+
     bool quickIndex = index.numDocumentedModuleMembers(hl)>maxItemsBeforeQuickIndex;
 
-    ol.startFile(fileName+extension,QCString(),title);
-    ol.startQuickIndices();
-    if (!disableIndex)
+    auto writeQuickLinks = [&,cap_letter=letter]()
     {
-      ol.writeQuickLinks(HighlightedItem::ModuleMembers,QCString());
-      if (!Config_getBool(HTML_DYNAMIC_MENUS))
+      ol.writeQuickLinks(HighlightedItem::ModuleMembers,QCString(),!dynamicMenus);
+      if (!dynamicMenus)
       {
         startQuickIndexList(ol);
 
@@ -3689,13 +3788,31 @@ static void writeModuleMemberIndexFiltered(OutputList &ol,
 
         if (quickIndex)
         {
-          writeQuickMemberIndex(ol,index.isModuleIndexLetterUsed(hl),letter,
+          writeQuickMemberIndex(ol,index.isModuleIndexLetterUsed(hl),cap_letter,
               getMmhlInfo(hl)->fname,multiPageIndex);
         }
+
+        ol.writeString("</div><!-- main-nav -->\n");
       }
+    };
+
+    ol.startFile(fileName+extension,QCString(),title);
+    ol.startQuickIndices();
+    if (!disableIndex && !quickLinksAfterSplitbar)
+    {
+      writeQuickLinks();
     }
     ol.endQuickIndices();
-    ol.writeSplitBar(fileName);
+    ol.writeSplitBar(fileName,QCString());
+    if (quickLinksAfterSplitbar)
+    {
+      writeQuickLinks();
+      if (!dynamicMenus)
+      {
+         ol.writeString("<div id=\"container\">\n");
+         ol.writeString("<div id=\"doc-content\">\n");
+      }
+    }
     ol.writeSearchInfo();
 
     ol.startContents();
@@ -3849,12 +3966,13 @@ static void writePages(PageDef *pd,FTVHelp *ftv)
 
   if (pd->visibleInIndex())
   {
-    QCString pageTitle;
+    QCString pageTitle, pageTitleAsHtml;
 
     if (pd->title().isEmpty())
       pageTitle=pd->name();
     else
-      pageTitle=filterTitle(pd->title());
+      pageTitle = parseCommentAsText(pd,nullptr,pd->title(),pd->getDefFileName(),pd->getDefLine());
+    pageTitleAsHtml = parseCommentAsHtml(pd,nullptr,pd->title(),pd->getDefFileName(),pd->getDefLine());
 
     if (ftv)
     {
@@ -3862,14 +3980,14 @@ static void writePages(PageDef *pd,FTVHelp *ftv)
       ftv->addContentsItem(
           hasSubPages,pageTitle,
           pd->getReference(),pd->getOutputFileBase(),
-          QCString(),hasSubPages,TRUE,pd);
+          QCString(),hasSubPages,TRUE,pd,pageTitleAsHtml);
     }
     if (addToIndex && pd!=Doxygen::mainPage.get())
     {
       Doxygen::indexList->addContentsItem(
           hasSubPages || hasSections,pageTitle,
           pd->getReference(),pd->getOutputFileBase(),
-          QCString(),hasSubPages,TRUE,pd);
+          QCString(),hasSubPages,TRUE,pd,pageTitleAsHtml);
     }
   }
   if (hasSubPages && ftv) ftv->incContentsDepth();
@@ -3927,7 +4045,7 @@ static void writePageIndex(OutputList &ol)
     }
     TextStream t;
     ftv.generateTreeViewInline(t);
-    ol.writeString(t.str().c_str());
+    ol.writeString(t.str());
   }
 
 //  ol.popGeneratorState();
@@ -4058,29 +4176,32 @@ static void writeGroupTreeNode(OutputList &ol, const GroupDef *gd, int level, FT
     numSubItems += gd->getPages().size();
 
     bool isDir = hasSubGroups || hasSubPages || numSubItems>0;
+    QCString title = parseCommentAsText(gd,nullptr,gd->groupTitle(),gd->getDefFileName(),gd->getDefLine());
+    QCString titleAsHtml = parseCommentAsHtml(gd,nullptr,gd->groupTitle(),gd->getDefFileName(),gd->getDefLine());
+
     //printf("gd='%s': pageDict=%d\n",qPrint(gd->name()),gd->pageDict->count());
     if (addToIndex)
     {
-      Doxygen::indexList->addContentsItem(isDir,gd->groupTitle(),gd->getReference(),gd->getOutputFileBase(),QCString(),isDir,TRUE);
+      Doxygen::indexList->addContentsItem(isDir,title,
+                           gd->getReference(),gd->getOutputFileBase(),QCString(),
+                           isDir,TRUE,nullptr,titleAsHtml);
       Doxygen::indexList->incContentsDepth();
     }
     if (ftv)
     {
-      ftv->addContentsItem(hasSubGroups,gd->groupTitle(),
+      ftv->addContentsItem(hasSubGroups,title,
                            gd->getReference(),gd->getOutputFileBase(),QCString(),
-                           FALSE,FALSE,gd);
+                           FALSE,FALSE,gd,titleAsHtml);
       ftv->incContentsDepth();
     }
 
-    //ol.writeListItem();
-    //ol.startTextLink(gd->getOutputFileBase(),0);
-    //parseText(ol,gd->groupTitle());
-    //ol.endTextLink();
-
     ol.startIndexListItem();
     ol.startIndexItem(gd->getReference(),gd->getOutputFileBase());
-    ol.parseText(gd->groupTitle());
+    ol.generateDoc(gd->getDefFileName(),gd->getDefLine(),
+                  gd,nullptr,gd->groupTitle(),false,false,
+                  QCString(),true,false);
     ol.endIndexItem(gd->getReference(),gd->getOutputFileBase());
+
     if (gd->isReference())
     {
       ol.startTypewriter();
@@ -4201,14 +4322,22 @@ static void writeGroupTreeNode(OutputList &ol, const GroupDef *gd, int level, FT
           if (!pd->name().isEmpty()) si=SectionManager::instance().find(pd->name());
           hasSubPages = pd->hasSubPages();
           bool hasSections = pd->hasSections();
+          QCString pageTitle;
+          if (pd->title().isEmpty())
+             pageTitle=pd->name();
+          else
+             pageTitle = parseCommentAsText(pd,nullptr,pd->title(),pd->getDefFileName(),pd->getDefLine());
+          QCString pageTitleAsHtml = parseCommentAsHtml(pd,nullptr,pd->title(),pd->getDefFileName(),pd->getDefLine());
           Doxygen::indexList->addContentsItem(
               hasSubPages || hasSections,
-              pd->title(),
+              pageTitle,
               gd->getReference(),
               gd->getOutputFileBase(),
               si ? si->label() : QCString(),
               hasSubPages || hasSections,
-              TRUE); // addToNavIndex
+              TRUE,
+              nullptr,
+              pageTitleAsHtml); // addToNavIndex
           if (hasSections || hasSubPages)
           {
             Doxygen::indexList->incContentsDepth();
@@ -4328,7 +4457,7 @@ static void writeTopicIndex(OutputList &ol)
     TextStream t;
     ftv.generateTreeViewInline(t);
     ol.disableAllBut(OutputType::Html);
-    ol.writeString(t.str().c_str());
+    ol.writeString(t.str());
     if (addToIndex)
     {
       Doxygen::indexList->decContentsDepth();
@@ -4469,7 +4598,7 @@ static void writeModuleIndex(OutputList &ol)
     writeModuleList(ol,&ftv,addToIndex);
     TextStream t;
     ftv.generateTreeViewInline(t);
-    ol.writeString(t.str().c_str());
+    ol.writeString(t.str());
     if (addToIndex)
     {
       Doxygen::indexList->decContentsDepth();
@@ -4645,8 +4774,7 @@ static void writeConceptIndex(OutputList &ol)
                  FALSE, // isExample
                  QCString(),     // example name
                  TRUE,  // single line
-                 TRUE,  // link from index
-                 Config_getBool(MARKDOWN_SUPPORT)
+                 TRUE   // link from index
                 );
         //ol.docify(")");
       }
@@ -4680,7 +4808,7 @@ static void writeConceptIndex(OutputList &ol)
     writeConceptRootList(&ftv,addToIndex);
     TextStream t;
     ftv.generateTreeViewInline(t);
-    ol.writeString(t.str().c_str());
+    ol.writeString(t.str());
     if (addToIndex)
     {
       Doxygen::indexList->decContentsDepth();
@@ -4735,9 +4863,13 @@ static void writeUserGroupStubPage(OutputList &ol,LayoutNavEntry *lne)
 
 static void writeIndex(OutputList &ol)
 {
-  bool fortranOpt = Config_getBool(OPTIMIZE_FOR_FORTRAN);
-  bool vhdlOpt    = Config_getBool(OPTIMIZE_OUTPUT_VHDL);
-  QCString projectName = Config_getString(PROJECT_NAME);
+  bool fortranOpt       = Config_getBool(OPTIMIZE_FOR_FORTRAN);
+  bool vhdlOpt          = Config_getBool(OPTIMIZE_OUTPUT_VHDL);
+  bool disableIndex     = Config_getBool(DISABLE_INDEX);
+  bool generateTreeView = Config_getBool(GENERATE_TREEVIEW);
+  bool pageOutlinePanel = Config_getBool(PAGE_OUTLINE_PANEL);
+  bool fullSidebar      = Config_getBool(FULL_SIDEBAR);
+  QCString projectName  = Config_getString(PROJECT_NAME);
   // save old generator state
   ol.pushGeneratorState();
 
@@ -4757,14 +4889,17 @@ static void writeIndex(OutputList &ol)
   int defLine =
     Doxygen::mainPage ? Doxygen::mainPage->docLine() : -1;
 
-  QCString title;
+  QCString title, titleAsHtml;
   if (!mainPageHasTitle())
   {
     title = theTranslator->trMainPage();
   }
   else if (Doxygen::mainPage)
   {
-    title = filterTitle(Doxygen::mainPage->title());
+    title = parseCommentAsText(Doxygen::mainPage.get(),nullptr,Doxygen::mainPage->title(),
+                               Doxygen::mainPage->getDefFileName(),Doxygen::mainPage->getDefLine());
+    titleAsHtml = parseCommentAsHtml(Doxygen::mainPage.get(),nullptr,Doxygen::mainPage->title(),
+                                     Doxygen::mainPage->getDefFileName(),Doxygen::mainPage->getDefLine());
   }
 
   QCString indexName="index";
@@ -4783,7 +4918,9 @@ static void writeIndex(OutputList &ol)
                                           indexName,
                                           QCString(),
                                           hasSubs,
-                                          TRUE);
+                                          TRUE,
+                                          nullptr,
+                                          titleAsHtml);
     }
     if (hasSubs)
     {
@@ -4791,13 +4928,18 @@ static void writeIndex(OutputList &ol)
     }
   }
 
+  bool quickLinksAfterSplitbar = !disableIndex && generateTreeView && fullSidebar;
   ol.startQuickIndices();
-  if (!Config_getBool(DISABLE_INDEX))
+  if (!disableIndex && !quickLinksAfterSplitbar)
   {
     ol.writeQuickLinks(HighlightedItem::Main,QCString());
   }
   ol.endQuickIndices();
-  ol.writeSplitBar(indexName);
+  ol.writeSplitBar(indexName,QCString());
+  if (quickLinksAfterSplitbar)
+  {
+    ol.writeQuickLinks(HighlightedItem::Main,QCString());
+  }
   ol.writeSearchInfo();
   bool headerWritten=FALSE;
   if (Doxygen::mainPage)
@@ -4820,7 +4962,7 @@ static void writeIndex(OutputList &ol)
       ol.startTitleHead(QCString());
       ol.generateDoc(Doxygen::mainPage->docFile(),Doxygen::mainPage->getStartBodyLine(),
                   Doxygen::mainPage.get(),nullptr,Doxygen::mainPage->title(),false,false,
-                  QCString(),true,false,Config_getBool(MARKDOWN_SUPPORT));
+                  QCString(),true,false);
       headerWritten = TRUE;
     }
   }
@@ -4848,7 +4990,7 @@ static void writeIndex(OutputList &ol)
 
   if (Doxygen::mainPage)
   {
-    if (Doxygen::mainPage->localToc().isHtmlEnabled() && Doxygen::mainPage->hasSections())
+    if (Doxygen::mainPage->localToc().isHtmlEnabled() && Doxygen::mainPage->hasSections() && !(generateTreeView && pageOutlinePanel))
     {
       Doxygen::mainPage->writeToc(ol,Doxygen::mainPage->localToc());
     }
@@ -4856,7 +4998,7 @@ static void writeIndex(OutputList &ol)
     ol.startTextBlock();
     ol.generateDoc(defFileName,defLine,Doxygen::mainPage.get(),nullptr,
                 Doxygen::mainPage->documentation(),true,false,
-                QCString(),false,false,Config_getBool(MARKDOWN_SUPPORT));
+                QCString(),false,false);
     ol.endTextBlock();
     ol.endPageDoc();
   }
@@ -4866,7 +5008,23 @@ static void writeIndex(OutputList &ol)
   ol.writeString("<a href=\"" + fn + "\"></a>\n");
   Doxygen::indexList->addIndexFile(fn);
 
-  endFile(ol);
+  if (Doxygen::mainPage &&
+      generateTreeView &&
+      pageOutlinePanel &&
+      Doxygen::mainPage->localToc().isHtmlEnabled() &&
+      Doxygen::mainPage->hasSections()
+     )
+  {
+    ol.writeString("</div><!-- doc-content -->\n");
+    ol.endContents();
+    Doxygen::mainPage->writePageNavigation(ol);
+    ol.writeString("</div><!-- container -->\n");
+    endFile(ol,true,true);
+  }
+  else
+  {
+    endFile(ol);
+  }
 
   ol.disable(OutputType::Html);
 
@@ -4901,7 +5059,7 @@ static void writeIndex(OutputList &ol)
   {
     ol.startProjectNumber();
     ol.generateDoc(defFileName,defLine,Doxygen::mainPage.get(),nullptr,Config_getString(PROJECT_NUMBER),false,false,
-                   QCString(),false,false,Config_getBool(MARKDOWN_SUPPORT));
+                   QCString(),false,false);
     ol.endProjectNumber();
   }
   ol.endIndexSection(IndexSection::isTitlePageStart);
@@ -4944,6 +5102,12 @@ static void writeIndex(OutputList &ol)
       ol.startIndexSection(IndexSection::isTopicIndex);
       ol.parseText(/*projPrefix+*/ theTranslator->trTopicIndex());
       ol.endIndexSection(IndexSection::isTopicIndex);
+    }
+    if (index.numDocumentedDirs()>0)
+    {
+      ol.startIndexSection(IndexSection::isDirIndex);
+      ol.parseText(theTranslator->trDirIndex());
+      ol.endIndexSection(IndexSection::isDirIndex);
     }
     if (Config_getBool(SHOW_NAMESPACES) && (index.numDocumentedNamespaces()>0))
     {
@@ -5035,6 +5199,12 @@ static void writeIndex(OutputList &ol)
     ol.startIndexSection(IndexSection::isTopicDocumentation);
     ol.parseText(/*projPrefix+*/theTranslator->trTopicDocumentation());
     ol.endIndexSection(IndexSection::isTopicDocumentation);
+  }
+  if (index.numDocumentedDirs()>0)
+  {
+    ol.startIndexSection(IndexSection::isDirDocumentation);
+    ol.parseText(/*projPrefix+*/theTranslator->trDirDocumentation());
+    ol.endIndexSection(IndexSection::isDirDocumentation);
   }
   if (index.numDocumentedNamespaces()>0)
   {
@@ -5410,6 +5580,9 @@ static void writeIndexHierarchyEntries(OutputList &ol,const LayoutNavEntryList &
     }
     //printf("ending %s kind=%d\n",qPrint(lne->title()),lne->kind());
   }
+
+  // always write the directory index as it is used for non-HTML output only
+  writeDirIndex(ol);
 }
 
 static bool quickLinkVisible(LayoutNavEntry::Kind kind)

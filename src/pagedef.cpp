@@ -65,6 +65,7 @@ class PageDefImpl : public DefinitionMixin<PageDef>
     void setNestingLevel(int l) override;
     void writePageDocumentation(OutputList &ol) const override;
     void addSectionsToIndex() override;
+    void writePageNavigation(OutputList &ol) const override;
 
   private:
     QCString m_fileName;
@@ -175,15 +176,19 @@ void PageDefImpl::addSectionsToIndex()
       QCString title = si->title();
       if (title.isEmpty()) title = si->label();
       title = parseCommentAsText(this,nullptr,title,si->fileName(),si->lineNr());
+      QCString titleAsHtml = parseCommentAsHtml(this,nullptr,si->title(),si->fileName(),si->lineNr());
       // determine if there is a next level inside this item, but be aware of the anchor and table section references.
       auto it_next = std::next(it);
       bool isDir = (it_next!=sectionRefs.end()) ?  ((*it_next)->type().isSection() && (*it_next)->type().level() > nextLevel) : false;
-      Doxygen::indexList->addContentsItem(isDir,title,
-                                         getReference(),
-                                         getOutputFileBase(),
-                                         si->label(),
-                                         false,
-                                         true);
+      Doxygen::indexList->addContentsItem(isDir,               // isDir
+                                          title,               // name
+                                          getReference(),      // ref
+                                          getOutputFileBase(), // file
+                                          si->label(),         // anchor
+                                          false,               // separateIndex
+                                          true,                // addToNavIndex
+                                          nullptr,             // def
+                                          titleAsHtml);        // nameAsHtml
       level = nextLevel;
     }
   }
@@ -289,8 +294,8 @@ void PageDefImpl::writeDocumentation(OutputList &ol)
 
     if (si->title() != manPageName)
     {
-      ol.generateDoc(docFile(),getStartBodyLine(),this,nullptr,si->title(),TRUE,FALSE,
-                     QCString(),TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+      ol.generateDoc(docFile(),getStartBodyLine(),this,nullptr,si->title(),true,false,
+                     QCString(),true,false,Config_getBool(MARKDOWN_SUPPORT),false);
       ol.endSection(si->label(),si->type());
     }
   }
@@ -309,24 +314,24 @@ void PageDefImpl::writeDocumentation(OutputList &ol)
   if (!title.isEmpty() && !name().isEmpty() && si!=nullptr)
   {
     ol.startPageDoc(si->title());
-    //ol.startSection(si->label,si->title,si->type);
     ol.startHeaderSection();
     ol.startTitleHead(getOutputFileBase());
-    ol.parseText(title);
+    ol.generateDoc(docFile(),getStartBodyLine(),this,nullptr,title,true,false,
+                   QCString(),true,false,Config_getBool(MARKDOWN_SUPPORT),false);
     ol.endTitleHead(getOutputFileBase(),title);
     ol.endHeaderSection();
-
-    /*ol.generateDoc(docFile(),getStartBodyLine(),this,nullptr,si->title(),TRUE,FALSE,
-                   QCString(),TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT));*/
   }
   else
+  {
     ol.startPageDoc("");
+  }
   ol.popGeneratorState();
   //2.}
 
+  bool pageWithSections = hasSections();
   ol.startContents();
   if ((m_localToc.isHtmlEnabled() || m_localToc.isLatexEnabled() || m_localToc.isDocbookEnabled())
-    && hasSections())
+    && pageWithSections)
   {
     writeToc(ol, m_localToc);
   }
@@ -337,11 +342,24 @@ void PageDefImpl::writeDocumentation(OutputList &ol)
 
   if (generateTreeView && getOuterScope()!=Doxygen::globalScope && !Config_getBool(DISABLE_INDEX))
   {
-    endFileWithNavPath(ol,getOuterScope());
+    endFileWithNavPath(ol,toDefinitionMutable(const_cast<Definition*>(getOuterScope())));
   }
   else
   {
-    endFile(ol,FALSE,TRUE);
+    if (generateTreeView && Config_getBool(PAGE_OUTLINE_PANEL) && pageWithSections)
+    {
+      ol.pushGeneratorState();
+      ol.disableAllBut(OutputType::Html);
+      ol.writeString("</div><!-- doc-content -->\n");
+      writePageNavigation(ol);
+      ol.writeString("</div><!-- container -->\n");
+      ol.popGeneratorState();
+      endFile(ol,true);
+    }
+    else
+    {
+      endFile(ol,false,true);
+    }
   }
 
   ol.popGeneratorState();
@@ -408,6 +426,11 @@ void PageDefImpl::writePageDocumentation(OutputList &ol) const
 
     ol.popGeneratorState();
   }
+}
+
+void PageDefImpl::writePageNavigation(OutputList &ol) const
+{
+  ol.writePageOutline();
 }
 
 bool PageDefImpl::visibleInIndex() const

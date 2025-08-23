@@ -41,6 +41,7 @@ typedef yyguts_t *yyscan_t;
 #include "message.h"
 #include "debug.h"
 #include "searchindex.h"
+#include "util.h"
 
 #define YY_NEVER_INTERACTIVE 1
 #define YY_NO_INPUT 1
@@ -535,9 +536,9 @@ NONLopt [^\n]*
                             BEGIN( PreLineCtrl );
                           }
 <SkipCurly>{B}*{RAWBEGIN} {
-                            QCString raw=QCString(yytext).stripWhiteSpace();
-                            yyextra->delimiter = raw.mid(2);
-                            yyextra->delimiter=yyextra->delimiter.left(yyextra->delimiter.length()-1);
+                            char *p = yytext;
+                            while (*p && qisspace(*p)) p++;
+                            yyextra->delimiter = extractBeginRawStringDelimiter(p);
                             yyextra->lastRawStringContext = YY_START;
                             yyextra->CCodeBuffer += yytext;
                             BEGIN(RawString);
@@ -673,9 +674,7 @@ NONLopt [^\n]*
                           }
 <RawString>{RAWEND}       {
                             yyextra->CCodeBuffer += yytext;
-                            QCString delimiter = yytext+1;
-                            delimiter=delimiter.left(delimiter.length()-1);
-                            if (delimiter==yyextra->delimiter)
+                            if (extractEndRawStringDelimiter(yytext)==yyextra->delimiter)
                             {
                               BEGIN(yyextra->lastRawStringContext);
                             }
@@ -820,14 +819,14 @@ NONLopt [^\n]*
                                             BEGIN(DocBlock);
                             }
                           }
-<DocCopyBlock>[\\@]("f$"|"f]"|"f}"|"f)") {
+<DocCopyBlock>{CMD}("f$"|"f]"|"f}"|"f)") {
                             yyextra->CCodeBuffer += yytext;
                             if (yyextra->docBlockName==&yytext[1])
                             {
                               BEGIN(DocBlock);
                             }
                           }
-<DocCopyBlock>[\\@]("endverbatim"|"endiliteral"|"endlatexonly"|"endhtmlonly"|"endxmlonly"|"enddocbookonly"|"endmanonly"|"endrtfonly"|"enddot"|"endmsc"|"enduml"|"endcode")/[^a-z_A-Z0-9] { // end of verbatim block
+<DocCopyBlock>{CMD}("endverbatim"|"endiliteral"|"endlatexonly"|"endhtmlonly"|"endxmlonly"|"enddocbookonly"|"endmanonly"|"endrtfonly"|"enddot"|"endmsc"|"enduml"|"endcode")/[^a-z_A-Z0-9] { // end of verbatim block
                             yyextra->CCodeBuffer += yytext;
                             if (&yytext[4]==yyextra->docBlockName)
                             {
@@ -1066,8 +1065,7 @@ static void codifyLines(yyscan_t yyscanner,const QCString &text)
     {
       yyextra->yyLineNr++;
       size_t l = static_cast<size_t>(p-sp-1);
-      std::string tmp(sp,l);
-      yyextra->code->codify(tmp.c_str());
+      yyextra->code->codify(QCString(sp,l));
       nextCodeLine(yyscanner);
     }
     else

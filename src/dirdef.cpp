@@ -63,6 +63,7 @@ class DirDefImpl : public DefinitionMixin<DirDef>
     QCString shortTitle() const override;
     bool hasDetailedDescription() const override;
     void writeDocumentation(OutputList &ol) override;
+    void writePageNavigation(OutputList &ol) const override;
     void writeTagFile(TextStream &t) override;
     void setDiskName(const QCString &name) override { m_diskName = name; }
     void sort() override;
@@ -72,6 +73,7 @@ class DirDefImpl : public DefinitionMixin<DirDef>
     void addUsesDependency(const DirDef *usedDir,const FileDef *srcFd,
                                    const FileDef *dstFd,bool srcDirect, bool dstDirect) override;
     void computeDependencies() override;
+    void findSectionsInDocumentation() override;
 
     bool hasDirectoryGraph() const override;
     void overrideDirectoryGraph(bool e) override;
@@ -148,7 +150,7 @@ DirDefImpl::~DirDefImpl()
 
 bool DirDefImpl::isLinkableInProject() const
 {
-  return !isReference();
+  return !isReference() && hasDocumentation();
 }
 
 bool DirDefImpl::isLinkable() const
@@ -240,7 +242,7 @@ void DirDefImpl::writeDetailedDescription(OutputList &ol,const QCString &title)
       ol.disableAllBut(OutputType::Html);
       ol.writeAnchor(QCString(),"details");
     ol.popGeneratorState();
-    ol.startGroupHeader();
+    ol.startGroupHeader("details");
     ol.parseText(title);
     ol.endGroupHeader();
 
@@ -248,7 +250,7 @@ void DirDefImpl::writeDetailedDescription(OutputList &ol,const QCString &title)
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF))
     {
       ol.generateDoc(briefFile(),briefLine(),this,nullptr,briefDescription(),FALSE,FALSE,
-                     QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                     QCString(),FALSE,FALSE);
     }
     // separator between brief and details
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF) &&
@@ -268,7 +270,7 @@ void DirDefImpl::writeDetailedDescription(OutputList &ol,const QCString &title)
     if (!documentation().isEmpty())
     {
       ol.generateDoc(docFile(),docLine(),this,nullptr,documentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                     QCString(),FALSE,FALSE);
     }
   }
 }
@@ -281,7 +283,7 @@ void DirDefImpl::writeBriefDescription(OutputList &ol)
     auto parser { createDocParser() };
     auto ast    { validatingParseDoc(
          *parser.get(), briefFile(),briefLine(),this,nullptr,briefDescription(),TRUE,FALSE,
-         QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT)) };
+         QCString(),FALSE,FALSE) };
     if (!ast->isEmpty())
     {
       ol.startParagraph();
@@ -310,6 +312,11 @@ void DirDefImpl::writeBriefDescription(OutputList &ol)
     }
   }
   ol.writeSynopsis();
+}
+
+void DirDefImpl::writePageNavigation(OutputList &ol) const
+{
+  ol.writePageOutline();
 }
 
 void DirDefImpl::writeDirectoryGraph(OutputList &ol)
@@ -357,11 +364,13 @@ void DirDefImpl::writeSubDirList(OutputList &ol)
       if (dd->hasDocumentation() || !dd->getFiles().empty())
       {
         ol.startMemberDeclaration();
-        ol.startMemberItem(dd->anchor(),OutputGenerator::MemberItemType::Normal);
+        QCString anc=dd->anchor();
+        if (anc.isEmpty()) anc=dd->shortName(); else anc.prepend(dd->shortName()+"_");
+        ol.startMemberItem(anc,OutputGenerator::MemberItemType::Normal);
         {
           ol.pushGeneratorState();
           ol.disableAllBut(OutputType::Html);
-          ol.writeString("<span class=\"iconfclosed\"></span>");
+          ol.writeString("<span class=\"iconfolder\"><div class=\"folder-icon\"></div></span>");
           ol.enableAll();
           ol.disable(OutputType::Html);
           ol.parseText(theTranslator->trDir(FALSE,TRUE)+" ");
@@ -378,8 +387,7 @@ void DirDefImpl::writeSubDirList(OutputList &ol)
               FALSE, // isExample
               QCString(), // exampleName
               TRUE,  // single line
-              TRUE,  // link from index
-              Config_getBool(MARKDOWN_SUPPORT)
+              TRUE   // link from index
               );
           ol.endMemberDescription();
         }
@@ -423,7 +431,9 @@ void DirDefImpl::writeFileList(OutputList &ol)
       if (doc || src)
       {
         ol.startMemberDeclaration();
-        ol.startMemberItem(fd->anchor(),OutputGenerator::MemberItemType::Normal);
+        QCString anc = fd->anchor();
+        if (anc.isEmpty()) anc=fd->displayName(); else anc.prepend(fd->displayName()+"_");
+        ol.startMemberItem(anc,OutputGenerator::MemberItemType::Normal);
         {
           ol.pushGeneratorState();
           ol.disableAllBut(OutputType::Html);
@@ -432,7 +442,7 @@ void DirDefImpl::writeFileList(OutputList &ol)
           {
             ol.startTextLink(fd->includeName(),QCString());
           }
-          ol.writeString("<span class=\"icondoc\"></span>");
+          ol.writeString("<span class=\"icondoc\"><div class=\"doc-icon\"></div></span>");
           if (genSrc)
           {
             ol.endTextLink();
@@ -462,8 +472,7 @@ void DirDefImpl::writeFileList(OutputList &ol)
               FALSE, // isExample
               QCString(), // exampleName
               TRUE,  // single line
-              TRUE,  // link from index
-              Config_getBool(MARKDOWN_SUPPORT)
+              TRUE   // link from index
               );
           ol.endMemberDescription();
         }
@@ -486,7 +495,14 @@ void DirDefImpl::endMemberDeclarations(OutputList &ol)
 
 QCString DirDefImpl::shortTitle() const
 {
-  return theTranslator->trDirReference(m_shortName);
+  if (Config_getBool(HIDE_COMPOUND_REFERENCE))
+  {
+    return m_shortName;
+  }
+  else
+  {
+    return theTranslator->trDirReference(m_shortName);
+  }
 }
 
 bool DirDefImpl::hasDetailedDescription() const
@@ -539,7 +555,15 @@ void DirDefImpl::writeDocumentation(OutputList &ol)
   bool generateTreeView = Config_getBool(GENERATE_TREEVIEW);
   ol.pushGeneratorState();
 
-  QCString title=theTranslator->trDirReference(m_dispName);
+  QCString title;
+  if (Config_getBool(HIDE_COMPOUND_REFERENCE))
+  {
+    title=m_dispName;
+  }
+  else
+  {
+    title=theTranslator->trDirReference(m_dispName);
+  }
   AUTO_TRACE("title={}",title);
   startFile(ol,getOutputFileBase(),name(),title,HighlightedItem::Files,!generateTreeView);
 
@@ -736,6 +760,12 @@ void DirDefImpl::addUsesDependency(const DirDef *dir,const FileDef *srcFd,
                                  dstDirect);
     }
   }
+}
+
+void DirDefImpl::findSectionsInDocumentation()
+{
+  docFindSections(briefDescription(),this,docFile());
+  docFindSections(documentation(),this,docFile());
 }
 
 /** Computes the dependencies between directories

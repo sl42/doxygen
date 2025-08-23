@@ -39,6 +39,7 @@
 #include "growbuf.h"
 #include "portable.h"
 #include "codefragment.h"
+#include "cite.h"
 
 static const int NUM_HTML_LIST_TYPES = 4;
 static const char g_types[][NUM_HTML_LIST_TYPES] = {"1", "a", "i", "A"};
@@ -463,6 +464,18 @@ void HtmlDocVisitor::operator()(const DocStyleChange &s)
     case DocStyleChange::Kbd:
       if (s.enable()) m_t << "<kbd" << s.attribs().toString() << ">";    else m_t << "</kbd>";
       break;
+    case DocStyleChange::Typewriter:
+      if (s.enable())
+      {
+        m_t << "<span class=\"tt\"" << s.attribs().toString() << ">";
+        m_insidePre=true;
+      }
+      else
+      {
+        m_t << "</span>";
+        m_insidePre=false;
+      }
+      break;
     case DocStyleChange::Code:
       if (s.enable())
       {
@@ -472,9 +485,11 @@ void HtmlDocVisitor::operator()(const DocStyleChange &s)
           attribs.mergeAttribute("class","param");
         }
         m_t << "<code" << attribs.toString() << ">";
+        m_insidePre=true;
       }
       else
       {
+        m_insidePre=false;
         m_t << "</code>";
       }
       break;
@@ -675,13 +690,16 @@ void HtmlDocVisitor::operator()(const DocVerbatim &s)
         {
           format = PlantumlManager::PUML_SVG;
         }
-        QCString baseName = PlantumlManager::instance().writePlantUMLSource(
+        auto baseNameVector = PlantumlManager::instance().writePlantUMLSource(
                                     htmlOutput,s.exampleFile(),
                                     s.text(),format,s.engine(),s.srcFile(),s.srcLine(),true);
-        m_t << "<div class=\"plantumlgraph\">\n";
-        writePlantUMLFile(baseName,s.relPath(),s.context(),s.srcFile(),s.srcLine());
-        visitCaption(m_t, s);
-        m_t << "</div>\n";
+        for (const auto &baseName: baseNameVector)
+        {
+          m_t << "<div class=\"plantumlgraph\">\n";
+          writePlantUMLFile(baseName,s.relPath(),s.context(),s.srcFile(),s.srcLine());
+          visitCaption(m_t, s);
+          m_t << "</div>\n";
+        }
         forceStartParagraph(s);
       }
       break;
@@ -924,7 +942,7 @@ void HtmlDocVisitor::operator()(const DocFormula &f)
       {
         t << "</picture>";
       }
-      return QCString(t.str());
+      return t.str();
     };
 
     auto colorStyle = Config_getEnum(HTML_COLORSTYLE);
@@ -981,22 +999,20 @@ void HtmlDocVisitor::operator()(const DocSimpleSectSep &)
 void HtmlDocVisitor::operator()(const DocCite &cite)
 {
   if (m_hide) return;
+  auto opt = cite.option();
   if (!cite.file().isEmpty())
   {
-    startLink(cite.ref(),cite.file(),cite.relPath(),cite.anchor());
+    if (!opt.noCite()) startLink(cite.ref(),cite.file(),cite.relPath(),cite.anchor());
+    filter(cite.getText());
+    if (!opt.noCite()) endLink();
   }
   else
   {
-    m_t << "<b>[";
-  }
-  filter(cite.text());
-  if (!cite.file().isEmpty())
-  {
-    endLink();
-  }
-  else
-  {
-    m_t << "]</b>";
+    m_t << "<b>";
+    if (!opt.noPar()) filter("[");
+    filter(cite.target());
+    if (!opt.noPar()) filter("]");
+    m_t << "</b>";
   }
 }
 
@@ -1460,7 +1476,7 @@ void HtmlDocVisitor::operator()(const DocSection &s)
 {
   if (m_hide) return;
   forceEndParagraph(s);
-  m_t << "<h" << s.level() << ">";
+  m_t << "<h" << s.level() << " class=\"doxsection\">";
   m_t << "<a class=\"anchor\" id=\"" << s.anchor();
   m_t << "\"></a>\n";
   if (s.title())
@@ -1695,7 +1711,7 @@ void HtmlDocVisitor::operator()(const DocImage &img)
     {
       src = correctURL(url,img.relPath());
     }
-    if (typeSVG && !inlineImage)
+    if (typeSVG && !inlineImage && !src.startsWith("http://") && !src.startsWith("https://"))
     {
       m_t << "<object type=\"image/svg+xml\" data=\"" << convertToHtml(src)
         << "\"" << sizeAttribs << attrs;
@@ -1836,22 +1852,24 @@ void HtmlDocVisitor::operator()(const DocPlantUmlFile &df)
   }
   std::string inBuf;
   readInputFile(df.file(),inBuf);
-  QCString baseName = PlantumlManager::instance().writePlantUMLSource(
-                                    htmlOutput,QCString(),
-                                    inBuf.c_str(),format,QCString(),df.srcFile(),df.srcLine(),false);
-  baseName=makeBaseName(baseName);
-  m_t << "<div class=\"plantumlgraph\">\n";
-  writePlantUMLFile(baseName,df.relPath(),QCString(),df.srcFile(),df.srcLine());
-  if (df.hasCaption())
+  auto baseNameVector = PlantumlManager::instance().writePlantUMLSource(htmlOutput,QCString(),
+                                    inBuf,format,QCString(),df.srcFile(),df.srcLine(),false);
+  for (const auto &bName: baseNameVector)
   {
-    m_t << "<div class=\"caption\">\n";
-  }
-  visitChildren(df);
-  if (df.hasCaption())
-  {
+    QCString baseName=makeBaseName(bName);
+    m_t << "<div class=\"plantumlgraph\">\n";
+    writePlantUMLFile(baseName,df.relPath(),QCString(),df.srcFile(),df.srcLine());
+    if (df.hasCaption())
+    {
+      m_t << "<div class=\"caption\">\n";
+    }
+    visitChildren(df);
+    if (df.hasCaption())
+    {
+      m_t << "</div>\n";
+    }
     m_t << "</div>\n";
   }
-  m_t << "</div>\n";
   forceStartParagraph(df);
 }
 
@@ -2101,7 +2119,8 @@ void HtmlDocVisitor::filter(const QCString &str, const bool retainNewline)
       case '<':  m_t << "&lt;"; break;
       case '>':  m_t << "&gt;"; break;
       case '&':  m_t << "&amp;"; break;
-      case '\\': if ((*p == '(') || (*p == ')'))
+      case '\\':
+        if ((*p == '(') || (*p == ')') || (*p == '[') || (*p == ']'))
           m_t << "\\" // << "&zwj;" 
               << *p++;
         else
@@ -2141,7 +2160,7 @@ QCString HtmlDocVisitor::filterQuotedCdataAttr(const QCString &str)
       case '<':  growBuf.addStr("&lt;"); break;
       case '>':  growBuf.addStr("&gt;"); break;
       case '\\':
-        if ((*p == '(') || (*p == ')'))
+        if ((*p == '(') || (*p == ')') || (*p == '[') || (*p == ']'))
         {
           //growBuf.addStr("\\&zwj;");
           growBuf.addChar(*p++);

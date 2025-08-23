@@ -61,6 +61,7 @@ struct DocParserContext
   const Definition *scope = nullptr;
   QCString context;
   bool inSeeBlock = false;
+  bool inCodeStyle = false;
   bool xmlComment = false;
   bool insideHtmlLink = false;
   DocNodeStack nodeStack;
@@ -92,6 +93,7 @@ struct DocParserContext
   TokenInfo *token = nullptr;
   int      lineNo = 0;
   bool     markdownSupport = false;
+  bool     autolinkSupport = false;
 };
 
 class DocParser : public IDocParser

@@ -162,6 +162,7 @@ seen as a level 2 header (see \ref md_headers).
 
 To emphasize a text fragment you start and end the fragment with an underscore or star.
 Using two stars or underscores will produce strong emphasis.
+Three stars or underscores will combine the emphasis from the previous two options.
 
 Examples:
 
@@ -172,6 +173,10 @@ Examples:
 *    **double asterisks**
 *
 *    __double underscores__
+*
+*    ***triple asterisks***
+*
+*    ___triple underscores___
 
 See section \ref mddox_emph_spans for more info how Doxygen handles
 emphasis / strikethrough spans slightly different than standard / Markdown GitHub Flavored Markdown.
@@ -540,7 +545,12 @@ be `.md` or `.markdown` (see
 \ref cfg_extension_mapping "EXTENSION_MAPPING" if your Markdown files have
 a different extension, and use `md` as the name of the parser).
 Each file is converted to a page (see the \ref cmdpage "page" command for
-details).
+details). Doxygen will not create a dedicated page if the Markdown file
+starts with a dedicated command (a.o. `\defgroup`, `\dir`) to avoid creating
+an empty page when the file only contains directory or group documentation.
+A `README.md` file in a subdirectory will be treated as directory
+documentation, unless it is explicitly overruled by a dedicated command
+(a.o. `@page`, `@mainpage`) to create a new page.
 
 By default the name and title of the page are derived from the file name.
 If the file starts with a level 1 header however, it is used as the title
@@ -682,6 +692,10 @@ added for backward compatibility reasons.
 
 In case you want to have single quotes inside a code span, don't use
 one backtick but two backticks around the code span.
+
+Double backticks are also ended by double quotes in the same way.
+
+    A ``cool'' word in a ``nice'' sentence.
 
 \subsection mddox_lists Lists Extensions
 

@@ -58,16 +58,22 @@ class CiteInfoImpl : public CiteInfo
 {
   public:
     CiteInfoImpl(const QCString &label, const QCString &text=QCString())
-    : m_label(label), m_text(text) { }
+    : m_label(label), m_text(text), m_shortAuthor(QCString()), m_year(QCString()) { }
 
     QCString label() const override { return m_label;    }
     QCString text()  const override { return m_text;     }
+    QCString shortAuthor()  const override { return m_shortAuthor;     }
+    QCString year()  const override { return m_year;     }
 
     void setText(const QCString &s) { m_text = s; }
+    void setShortAuthor(const QCString &s) { m_shortAuthor = s; }
+    void setYear(const QCString &s) { m_year = s; }
 
   private:
     QCString m_label;
     QCString m_text;
+    QCString m_shortAuthor;
+    QCString m_year;
 };
 
 struct CitationManager::Private
@@ -310,7 +316,7 @@ QCString CitationManager::replaceFormulas(const QCString &s)
   QCString t;
   int pos=0;
   int i = -1;
-  while ((i=s.find(g_formulaMarker.c_str(),pos))!=-1)
+  while ((i=s.find(g_formulaMarker,pos))!=-1)
   {
     t += s.mid(pos,i-pos);
     int markerSize = static_cast<int>( g_formulaMarker.length());
@@ -337,7 +343,7 @@ void CitationManager::generatePage()
   const StringVector &citeDataList = Config_getList(CITE_BIB_FILES);
   for (const auto &bibdata : citeDataList)
   {
-    QCString bibFile = getBibFile(QCString(bibdata));
+    QCString bibFile = getBibFile(bibdata);
     insertCrossReferencesForBibFile(bibFile);
   }
 
@@ -386,7 +392,7 @@ void CitationManager::generatePage()
   int i = 0;
   for (const auto &bibdata : citeDataList)
   {
-    QCString bibFile = getBibFile(QCString(bibdata));
+    QCString bibFile = getBibFile(bibdata);
     FileInfo fi(bibFile.str());
     if (fi.exists())
     {
@@ -457,20 +463,32 @@ void CitationManager::generatePage()
       if (insideBib && ((i=line.find("name=\"CITEREF_"))!=-1 || (i=line.find("name=\"#CITEREF_"))!=-1))
       {
         int j=line.find("\">[");
-        int k=line.find("]</a>");
+        int j1=line.find("<!--[");
+        int k=line.find("]<!--");
+        int k1=line.find("]-->");
         if (j!=-1 && k!=-1)
         {
           size_t ui=static_cast<size_t>(i);
-          size_t uj=static_cast<size_t>(j);
-          size_t uk=static_cast<size_t>(k);
-          QCString label = line.mid(ui+14,uj-ui-14);
-          QCString number = line.mid(uj+2,uk-uj-1);
-          line = line.left(ui+14) + label + line.right(line.length()-uj);
+          size_t uj0=static_cast<size_t>(j);
+          size_t uj=static_cast<size_t>(j1);
+          size_t uk=static_cast<size_t>(k1);
+          QCString label = line.mid(ui+14,uj0-ui-14);
+          StringVector optList = split(line.mid(uj+5,uk-uj-5).str(),",");
+          QCString number = optList[0];
+          QCString shortAuthor = optList[1];
+          QCString year;
+          if (optList.size() == 3)
+          {
+            year = optList[2];
+          }
+          line = line.left(ui+14) + label + line.right(line.length()-uj0);
           auto it = p->entries.find(label.lower().str());
           //printf("label='%s' number='%s' => %p\n",qPrint(label),qPrint(number),it->second.get());
           if (it!=p->entries.end())
           {
             it->second->setText(number);
+            it->second->setShortAuthor(shortAuthor);
+            it->second->setYear(year.stripWhiteSpace());
           }
         }
       }
@@ -519,7 +537,7 @@ void CitationManager::generatePage()
     i = 0;
     for (const auto &bibdata : citeDataList)
     {
-      QCString bibFile = getBibFile(QCString(bibdata));
+      QCString bibFile = getBibFile(bibdata);
       FileInfo fi(bibFile.str());
       if (fi.exists())
       {
@@ -563,7 +581,7 @@ QCString CitationManager::latexBibFiles()
   int i = 0;
   for (const auto &bibdata : citeDataList)
   {
-    QCString bibFile = getBibFile(QCString(bibdata));
+    QCString bibFile = getBibFile(bibdata);
     FileInfo fi(bibFile.str());
     if (fi.exists())
     {

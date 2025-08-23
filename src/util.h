@@ -247,9 +247,9 @@ struct KeywordSubstitution
 
 using KeywordSubstitutionList = std::vector<KeywordSubstitution>;
 
-QCString substituteKeywords(const QCString &s,const KeywordSubstitutionList &keywords);
+QCString substituteKeywords(const QCString &file,const QCString &s,const KeywordSubstitutionList &keywords);
 
-QCString substituteKeywords(const QCString &s,const QCString &title,
+QCString substituteKeywords(const QCString &file,const QCString &s,const QCString &title,
          const QCString &projName,const QCString &projNum,const QCString &projBrief);
 
 int getPrefixIndex(const QCString &name);
@@ -273,11 +273,11 @@ QCString stripScope(const QCString &name);
 QCString convertToId(const QCString &s);
 QCString correctId(const QCString &s);
 
-QCString convertToHtml(const QCString &s,bool keepEntities=TRUE);
+QCString convertToHtml(const QCString &s,bool keepEntities=true);
 
-QCString convertToXML(const QCString &s, bool keepEntities=FALSE);
+QCString convertToXML(const QCString &s, bool keepEntities=false);
 
-QCString convertToJSString(const QCString &s);
+QCString convertToJSString(const QCString &s,bool keepEntities=false,bool singleQuotes=false);
 
 QCString getOverloadDocs();
 
@@ -380,6 +380,7 @@ void addCodeOnlyMappings();
 bool checkIfTypedef(const Definition *scope,const FileDef *fileScope,const QCString &n);
 
 QCString parseCommentAsText(const Definition *scope,const MemberDef *member,const QCString &doc,const QCString &fileName,int lineNr);
+QCString parseCommentAsHtml(const Definition *scope,const MemberDef *member,const QCString &doc,const QCString &fileName,int lineNr);
 
 bool transcodeCharacterStringToUTF8(std::string &input,const char *inputEncoding);
 
@@ -481,5 +482,8 @@ size_t updateColumnCount(const char *s,size_t col);
 
 QCString mangleCSharpGenericName(const QCString &name);
 QCString demangleCSharpGenericName(const QCString &name,const QCString &templArgs);
+
+QCString extractBeginRawStringDelimiter(const char *rawStart);
+QCString extractEndRawStringDelimiter(const char *rawEnd);
 
 #endif

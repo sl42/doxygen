@@ -112,11 +112,9 @@ class DefinitionImpl::Private
 void DefinitionImpl::Private::setDefFileName(const QCString &df)
 {
   defFileName = df;
-  int lastDot = defFileName.findRev('.');
-  if (lastDot!=-1)
-  {
-    defFileExt = defFileName.mid(lastDot);
-  }
+  FileInfo fi(df.data());
+  QCString ext = fi.extension(false);
+  if (!ext.isEmpty()) defFileExt = "." + ext;
 }
 
 void DefinitionImpl::Private::init(const QCString &df, const QCString &n)
@@ -163,7 +161,7 @@ static bool matchExcludedSymbols(const QCString &name)
   std::string symName = name.str();
   for (const auto &pat : exclSyms)
   {
-    QCString pattern = pat.c_str();
+    QCString pattern = pat;
     bool forceStart=FALSE;
     bool forceEnd=FALSE;
     if (pattern.at(0)=='^')
@@ -309,7 +307,7 @@ void DefinitionImpl::addSectionsToDefinition(const std::vector<const SectionInfo
     //    qPrint(si->label()),qPrint(name()));
     SectionManager &sm = SectionManager::instance();
     SectionInfo *gsi=sm.find(si->label());
-    //printf("===== label=%s gsi=%p\n",qPrint(si->label),gsi);
+    //printf("===== label=%s gsi=%p\n",qPrint(si->label()),(void*)gsi);
     if (gsi==nullptr)
     {
       gsi = sm.add(*si);
@@ -317,15 +315,14 @@ void DefinitionImpl::addSectionsToDefinition(const std::vector<const SectionInfo
     if (p->sectionRefs.find(gsi->label())==nullptr)
     {
       p->sectionRefs.add(gsi);
-      gsi->setDefinition(p->def);
     }
+    gsi->setDefinition(p->def);
   }
 }
 
 bool DefinitionImpl::hasSections() const
 {
-  //printf("DefinitionImpl::hasSections(%s) #sections=%d\n",qPrint(name()),
-  //    p->sectionRefs.size());
+  //printf("DefinitionImpl::hasSections(%s) #sections=%zu\n",qPrint(name()), p->sectionRefs.size());
   if (p->sectionRefs.empty()) return FALSE;
   for (const SectionInfo *si : p->sectionRefs)
   {
@@ -451,7 +448,7 @@ void DefinitionImpl::_setBriefDescription(const QCString &b,const QCString &brie
       int c = brief.at(bl-1);
       switch(c)
       {
-        case '.': case '!': case '?': case '>': case ':': case ')': break;
+        case '.': case '!': case '?': case ':': break;
         default:
           if (isUTF8CharUpperCase(brief.str(),0) && !lastUTF8CharIsMultibyte(brief.str())) brief+='.';
           break;
@@ -888,7 +885,7 @@ bool readCodeFragment(const QCString &fileName,bool isMacro,
     bool ok = transcodeCharacterStringToUTF8(encBuf,encoding.data());
     if (ok)
     {
-      result = QCString(encBuf);
+      result = encBuf;
     }
     else
     {
@@ -1394,14 +1391,16 @@ QCString DefinitionImpl::navigationPathAsString() const
     if (p->def->definitionType()==Definition::TypeGroup &&
         !toGroupDef(p->def)->groupTitle().isEmpty())
     {
-      result+="<a class=\"el\" href=\"$relpath^"+fn+"\">"+
-              convertToHtml(toGroupDef(p->def)->groupTitle())+"</a>";
+      QCString title = parseCommentAsHtml(p->def,nullptr,toGroupDef(p->def)->groupTitle(),
+                                          p->def->getDefFileName(),p->def->getDefLine());
+      result+="<a href=\"$relpath^"+fn+"\">"+title+"</a>";
     }
     else if (p->def->definitionType()==Definition::TypePage &&
              toPageDef(p->def)->hasTitle())
     {
-      result+="<a class=\"el\" href=\"$relpath^"+fn+"\">"+
-            convertToHtml((toPageDef(p->def))->title())+"</a>";
+      QCString title = parseCommentAsHtml(p->def,nullptr,toPageDef(p->def)->title(),
+                                          p->def->getDefFileName(),p->def->getDefLine());
+      result+="<a href=\"$relpath^"+fn+"\">"+title+"</a>";
     }
     else if (p->def->definitionType()==Definition::TypeClass)
     {
@@ -1410,13 +1409,13 @@ QCString DefinitionImpl::navigationPathAsString() const
       {
         name = name.left(name.length()-2);
       }
-      result+="<a class=\"el\" href=\"$relpath^"+fn;
+      result+="<a href=\"$relpath^"+fn;
       if (!p->def->anchor().isEmpty()) result+="#"+p->def->anchor();
       result+="\">"+convertToHtml(name)+"</a>";
     }
     else
     {
-      result+="<a class=\"el\" href=\"$relpath^"+fn+"\">"+
+      result+="<a href=\"$relpath^"+fn+"\">"+
               convertToHtml(locName)+"</a>";
     }
   }
@@ -1447,8 +1446,56 @@ void DefinitionImpl::writeNavigationPath(OutputList &ol) const
 
 void DefinitionImpl::writeToc(OutputList &ol, const LocalToc &localToc) const
 {
-  if (p->sectionRefs.empty()) return;
-  ol.writeLocalToc(p->sectionRefs,localToc);
+  // first check if we have anything to show or if the outline is already shown on the outline panel
+  if (p->sectionRefs.empty() || (Config_getBool(GENERATE_TREEVIEW) && Config_getBool(PAGE_OUTLINE_PANEL))) return;
+  // generate the embedded toc
+  //ol.writeLocalToc(p->sectionRefs,localToc);
+
+  auto generateTocEntries = [this,&ol]()
+  {
+    for (const SectionInfo *si : p->sectionRefs)
+    {
+      if (si->type().isSection())
+      {
+        ol.startTocEntry(si);
+        const MemberDef *md     = p->def->definitionType()==Definition::TypeMember ? toMemberDef(p->def) : nullptr;
+        const Definition *scope = p->def->definitionType()==Definition::TypeMember ? p->def->getOuterScope() : p->def;
+        QCString docTitle = si->title();
+        if (docTitle.isEmpty()) docTitle = si->label();
+        ol.generateDoc(docFile(),getStartBodyLine(),scope,md,docTitle,TRUE,FALSE,
+                       QCString(),TRUE,FALSE);
+        ol.endTocEntry(si);
+      }
+    }
+  };
+
+  if (localToc.isHtmlEnabled())
+  {
+    ol.pushGeneratorState();
+    ol.disableAllBut(OutputType::Html);
+    ol.startLocalToc(localToc.htmlLevel());
+    generateTocEntries();
+    ol.endLocalToc();
+    ol.popGeneratorState();
+  }
+  if (localToc.isDocbookEnabled())
+  {
+    ol.pushGeneratorState();
+    ol.disableAllBut(OutputType::Docbook);
+    ol.startLocalToc(localToc.docbookLevel());
+    generateTocEntries();
+    ol.endLocalToc();
+    ol.popGeneratorState();
+  }
+  if (localToc.isLatexEnabled())
+  {
+    ol.pushGeneratorState();
+    ol.disableAllBut(OutputType::Latex);
+    ol.startLocalToc(localToc.latexLevel());
+    // no gneerateTocEntries() needed for LaTeX
+    ol.endLocalToc();
+    ol.popGeneratorState();
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1512,7 +1559,7 @@ static QCString abbreviate(const QCString &s,const QCString &name)
   const StringVector &briefDescAbbrev = Config_getList(ABBREVIATE_BRIEF);
   for (const auto &p : briefDescAbbrev)
   {
-    QCString str = substitute(p.c_str(),"$name",scopelessName); // replace $name with entity name
+    QCString str = substitute(p,"$name",scopelessName); // replace $name with entity name
     str += " ";
     stripWord(result,str);
   }
@@ -1822,6 +1869,10 @@ void DefinitionImpl::writeQuickMemberLinks(OutputList &,const MemberDef *) const
 }
 
 void DefinitionImpl::writeSummaryLinks(OutputList &) const
+{
+}
+
+void DefinitionImpl::writePageNavigation(OutputList &) const
 {
 }
 

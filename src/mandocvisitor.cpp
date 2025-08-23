@@ -28,6 +28,7 @@
 #include "emoji.h"
 #include "fileinfo.h"
 #include "codefragment.h"
+#include "cite.h"
 
 ManDocVisitor::ManDocVisitor(TextStream &t,OutputCodeList &ci,
                              const QCString &langExt)
@@ -148,6 +149,7 @@ void ManDocVisitor::operator()(const DocStyleChange &s)
       m_firstCol=FALSE;
       break;
     case DocStyleChange::Kbd:
+    case DocStyleChange::Typewriter:
     case DocStyleChange::Code:
       if (s.enable()) m_t << "\\fR";   else m_t << "\\fP";
       m_firstCol=FALSE;
@@ -426,9 +428,19 @@ void ManDocVisitor::operator()(const DocCite &cite)
 {
   if (m_hide) return;
   m_t << "\\fB";
-  if (cite.file().isEmpty()) m_t << "[";
-  filter(cite.text());
-  if (cite.file().isEmpty()) m_t << "]";
+  auto opt = cite.option();
+  QCString txt;
+  if (!cite.file().isEmpty())
+  {
+    txt = cite.getText();
+  }
+  else
+  {
+    if (!opt.noPar()) txt += "[";
+    txt += cite.target();
+    if (!opt.noPar()) txt += "]";
+  }
+  filter(txt);
   m_t << "\\fP";
 }
 

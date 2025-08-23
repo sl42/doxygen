@@ -338,9 +338,9 @@ void DocParser::checkUnOrMultipleDocumentedParams()
         bool first=TRUE;
         QCString errMsg = "The following parameter";
         if (undocParams.size()>1) errMsg+="s";
-        errMsg+=" of "+
-            QCString(context.memberDef->qualifiedName()) +
-            QCString(argListToString(al)) +
+        errMsg+=QCString(" of ")+
+            context.memberDef->qualifiedName() +
+            argListToString(al) +
             (undocParams.size()>1 ? " are" : " is") + " not documented:\n";
         for (const Argument &a : undocParams)
         {
@@ -626,6 +626,7 @@ void DocParser::handleStyleEnter(DocNodeVariant *parent,DocNodeList &children,
   children.append<DocStyleChange>(this,parent,context.nodeStack.size(),s,tagName,TRUE,
                                   context.fileName,tokenizer.getLineNr(),attribs);
   context.styleStack.push(&children.back());
+  context.inCodeStyle = s==DocStyleChange::Style::Typewriter;
 }
 
 /*! Called when a style change ends. For instance a \</b\> command is
@@ -670,6 +671,10 @@ void DocParser::handleStyleLeave(DocNodeVariant *parent,DocNodeList &children,
           this,parent,context.nodeStack.size(),s,
           topStyleChange(context.styleStack).tagName(),FALSE);
     context.styleStack.pop();
+  }
+  if (s==DocStyleChange::Style::Typewriter)
+  {
+    context.inCodeStyle = false;
   }
 }
 
@@ -785,8 +790,7 @@ void DocParser::handleLinkedWord(DocNodeVariant *parent,DocNodeList &children,bo
   };
   QCString name = linkToText(context.lang,context.token->name,TRUE);
   AUTO_TRACE("word={}",name);
-  bool autolinkSupport = Config_getBool(AUTOLINK_SUPPORT);
-  if ((!autolinkSupport && !ignoreAutoLinkFlag) || ignoreWord(context.token->name)) // no autolinking -> add as normal word
+  if ((!context.autolinkSupport && !ignoreAutoLinkFlag) || ignoreWord(context.token->name)) // no autolinking -> add as normal word
   {
     children.append<DocWord>(this,parent,name);
     return;
@@ -801,11 +805,12 @@ void DocParser::handleLinkedWord(DocNodeVariant *parent,DocNodeList &children,bo
   bool ambig = false;
   FileDef *fd = findFileDef(Doxygen::inputNameLinkedMap,context.fileName,ambig);
   auto lang = context.lang;
+  bool inSeeBlock = context.inSeeBlock || context.inCodeStyle;
   //printf("handleLinkedWord(%s) context.context=%s\n",qPrint(context.token->name),qPrint(context.context));
   if (!context.insideHtmlLink &&
-      (resolveRef(context.context,context.token->name,context.inSeeBlock,&compound,&member,lang,TRUE,fd,TRUE)
+      (resolveRef(context.context,context.token->name,inSeeBlock,&compound,&member,lang,TRUE,fd,TRUE)
        || (!context.context.isEmpty() &&  // also try with global scope
-           resolveRef(QCString(),context.token->name,context.inSeeBlock,&compound,&member,lang,FALSE,nullptr,TRUE))
+           resolveRef(QCString(),context.token->name,inSeeBlock,&compound,&member,lang,FALSE,nullptr,TRUE))
       )
      )
   {
@@ -816,7 +821,7 @@ void DocParser::handleLinkedWord(DocNodeVariant *parent,DocNodeList &children,bo
       if (member->isObjCMethod())
       {
         bool localLink = context.memberDef ? member->getClassDef()==context.memberDef->getClassDef() : FALSE;
-        name = member->objCMethodName(localLink,context.inSeeBlock);
+        name = member->objCMethodName(localLink,inSeeBlock);
       }
       children.append<DocLinkedWord>(
             this,parent,name,
@@ -1493,6 +1498,9 @@ reparsetoken:
           case HtmlTagType::HTML_KBD:
             handleEnterLeaveStyle(DocStyleChange::Kbd);
             break;
+          case HtmlTagType::HTML_TT:
+            handleEnterLeaveStyle(DocStyleChange::Typewriter);
+            break;
           case HtmlTagType::HTML_EMPHASIS:
             handleEnterLeaveStyle(DocStyleChange::Italic);
             break;
@@ -1923,14 +1931,15 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
                             const QCString &input,bool indexWords,
                             bool isExample, const QCString &exampleName,
                             bool singleLine, bool linkFromIndex,
-                            bool markdownSupport)
+                            bool markdownSupport,
+                            bool autolinkSupport)
 {
   DocParser *parser = dynamic_cast<DocParser*>(&parserIntf);
   assert(parser!=nullptr);
   if (parser==nullptr) return nullptr;
   //printf("validatingParseDoc(%s,%s)=[%s]\n",ctx?qPrint(ctx->name()):"<none>",
   //                                     md?qPrint(md->name()):"<none>",
-  //                                     input);
+  //                                     qPrint(input));
   //printf("========== validating %s at line %d\n",qPrint(fileName),startLine);
   //printf("---------------- input --------------------\n%s\n----------- end input -------------------\n",qPrint(input));
 
@@ -1988,7 +1997,7 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
 
   parser->context.fileName = fileName;
   parser->context.relPath = (!linkFromIndex && ctx) ?
-               QCString(relativePathToRoot(ctx->getOutputFileBase())) :
+               relativePathToRoot(ctx->getOutputFileBase()) :
                QCString("");
   //printf("ctx->name=%s relPath=%s\n",qPrint(ctx->name()),qPrint(parser->context.relPath));
   parser->context.memberDef = md;
@@ -1996,6 +2005,7 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
   while (!parser->context.styleStack.empty()) parser->context.styleStack.pop();
   while (!parser->context.initialStyleStack.empty()) parser->context.initialStyleStack.pop();
   parser->context.inSeeBlock = FALSE;
+  parser->context.inCodeStyle = FALSE;
   parser->context.xmlComment = FALSE;
   parser->context.insideHtmlLink = FALSE;
   parser->context.includeFileText = "";
@@ -2008,6 +2018,7 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
   parser->context.retvalsFound.clear();
   parser->context.paramsFound.clear();
   parser->context.markdownSupport = markdownSupport;
+  parser->context.autolinkSupport = autolinkSupport;
 
   //printf("Starting comment block at %s:%d\n",qPrint(parser->context.fileName),startLine);
   parser->tokenizer.setLineNr(startLine);
@@ -2046,6 +2057,59 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
   return ast;
 }
 
+IDocNodeASTPtr validatingParseTitle(IDocParser &parserIntf,const QCString &fileName,int lineNr,const QCString &input)
+{
+  DocParser *parser = dynamic_cast<DocParser*>(&parserIntf);
+  assert(parser!=nullptr);
+  if (parser==nullptr) return nullptr;
+
+  // set initial token
+  parser->context.token = parser->tokenizer.resetToken();
+
+  //printf("------------ input ---------\n%s\n"
+  //       "------------ end input -----\n",input);
+  parser->context.context = "";
+  parser->context.fileName = fileName;
+  parser->context.relPath = "";
+  parser->context.memberDef = nullptr;
+  while (!parser->context.nodeStack.empty()) parser->context.nodeStack.pop();
+  while (!parser->context.styleStack.empty()) parser->context.styleStack.pop();
+  while (!parser->context.initialStyleStack.empty()) parser->context.initialStyleStack.pop();
+  parser->context.inSeeBlock = FALSE;
+  parser->context.inCodeStyle = FALSE;
+  parser->context.xmlComment = FALSE;
+  parser->context.insideHtmlLink = FALSE;
+  parser->context.includeFileText = "";
+  parser->context.includeFileOffset = 0;
+  parser->context.includeFileLength = 0;
+  parser->context.isExample = FALSE;
+  parser->context.exampleName = "";
+  parser->context.hasParamCommand = FALSE;
+  parser->context.hasReturnCommand = FALSE;
+  parser->context.retvalsFound.clear();
+  parser->context.paramsFound.clear();
+  parser->context.searchUrl="";
+  parser->context.lang = SrcLangExt::Unknown;
+  parser->context.markdownSupport = Config_getBool(MARKDOWN_SUPPORT);
+  parser->context.autolinkSupport = false;
+
+  auto ast = std::make_unique<DocNodeAST>(DocTitle(parser,nullptr));
+
+  if (!input.isEmpty())
+  {
+    // build abstract syntax tree from title string
+    std::get<DocTitle>(ast->root).parseFromString(nullptr,input);
+
+    if (Debug::isFlagSet(Debug::PrintTree))
+    {
+      // pretty print the result
+      std::visit(PrintDocVisitor{},ast->root);
+    }
+  }
+
+  return ast;
+}
+
 IDocNodeASTPtr validatingParseText(IDocParser &parserIntf,const QCString &input)
 {
   DocParser *parser = dynamic_cast<DocParser*>(&parserIntf);
@@ -2066,6 +2130,7 @@ IDocNodeASTPtr validatingParseText(IDocParser &parserIntf,const QCString &input)
   while (!parser->context.styleStack.empty()) parser->context.styleStack.pop();
   while (!parser->context.initialStyleStack.empty()) parser->context.initialStyleStack.pop();
   parser->context.inSeeBlock = FALSE;
+  parser->context.inCodeStyle = FALSE;
   parser->context.xmlComment = FALSE;
   parser->context.insideHtmlLink = FALSE;
   parser->context.includeFileText = "";
@@ -2080,6 +2145,7 @@ IDocNodeASTPtr validatingParseText(IDocParser &parserIntf,const QCString &input)
   parser->context.searchUrl="";
   parser->context.lang = SrcLangExt::Unknown;
   parser->context.markdownSupport = Config_getBool(MARKDOWN_SUPPORT);
+  parser->context.autolinkSupport = FALSE;
 
 
   auto ast = std::make_unique<DocNodeAST>(DocText(parser));

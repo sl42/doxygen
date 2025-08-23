@@ -17,6 +17,7 @@
 #define HTMLGEN_H
 
 #include "outputgen.h"
+#include "containers.h"
 
 class OutputCodeList;
 
@@ -111,7 +112,7 @@ class HtmlGenerator : public OutputGenerator, public OutputGenIntf
     static void writeSearchPage();
     static void writeExternalSearchPage();
     static QCString writeLogoAsString(const QCString &path);
-    static QCString writeSplitBarAsString(const QCString &name,const QCString &relpath);
+    static QCString writeSplitBarAsString(const QCString &name,const QCString &relpath,const QCString &allMembersFile);
     static QCString getMathJaxMacros();
     static QCString getNavTreeCss();
     void clearBuffer();
@@ -162,7 +163,7 @@ class HtmlGenerator : public OutputGenerator, public OutputGenIntf
     void endTextLink() override;
     void startTypewriter() override { m_t << "<code>"; }
     void endTypewriter() override   { m_t << "</code>"; }
-    void startGroupHeader(int) override;
+    void startGroupHeader(const QCString &,int) override;
     void endGroupHeader(int) override;
     void startItemListItem() override { m_t << "<li>"; }
     void endItemListItem() override { m_t << "</li>\n"; }
@@ -190,7 +191,7 @@ class HtmlGenerator : public OutputGenerator, public OutputGenIntf
     void startCompoundTemplateParams() override;
     void endCompoundTemplateParams() override;
 
-    void startMemberGroupHeader(bool) override;
+    void startMemberGroupHeader(const QCString &,bool) override;
     void endMemberGroupHeader() override;
     void startMemberGroupDocs() override;
     void endMemberGroupDocs() override;
@@ -248,11 +249,12 @@ class HtmlGenerator : public OutputGenerator, public OutputGenIntf
     void endPageRef(const QCString &,const QCString &) override {}
     void startQuickIndices() override {}
     void endQuickIndices() override;
-    void writeSplitBar(const QCString &name) override;
+    void writeSplitBar(const QCString &name,const QCString &allMembersFile) override;
     void writeNavigationPath(const QCString &s) override;
     void writeLogo() override;
-    void writeQuickLinks(HighlightedItem hli,const QCString &file) override;
+    void writeQuickLinks(HighlightedItem hli,const QCString &file,bool extraTabs) override;
     void writeSummaryLink(const QCString &file,const QCString &anchor,const QCString &title,bool first) override;
+    void writePageOutline() override;
     void startContents() override;
     void endContents() override;
     void startPageDoc(const QCString &pageTitle) override;
@@ -324,7 +326,10 @@ class HtmlGenerator : public OutputGenerator, public OutputGenIntf
     void writeLabel(const QCString &l,bool isLast) override;
     void endLabels() override;
 
-    void writeLocalToc(const SectionRefs &sr,const LocalToc &lt) override;
+    void startLocalToc(int level) override;
+    void endLocalToc() override;
+    void startTocEntry(const SectionInfo *si) override;
+    void endTocEntry(const SectionInfo *si) override;
 
     void startPlainFile(const QCString &name) override { OutputGenerator::startPlainFile(name); }
     void endPlainFile() override { OutputGenerator::endPlainFile(); }
@@ -342,6 +347,19 @@ class HtmlGenerator : public OutputGenerator, public OutputGenIntf
     bool                            m_emptySection = false;
     std::unique_ptr<OutputCodeList> m_codeList;
     HtmlCodeGenerator              *m_codeGen = nullptr;
+    int                             m_pageOutlineIndent = 0;
+
+    struct TocState
+    {
+      int level = 0;
+      int indent = 0;
+      int maxLevel = 0;
+      BoolVector inLi;
+      void writeIndent(TextStream &t) { for (int i=0;i<indent*2;i++) t << " "; };
+      void incIndent(TextStream &t,const QCString &text) { writeIndent(t); t << text << "\n"; indent++; };
+      void decIndent(TextStream &t,const QCString &text) { indent--; writeIndent(t); t << text << "\n"; };
+    };
+    TocState m_tocState;
 };
 
 #endif

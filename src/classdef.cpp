@@ -324,6 +324,7 @@ class ClassDefImpl : public DefinitionMixin<ClassDefMutable>
     void writeDeclaration(OutputList &ol,const MemberDef *md,bool inGroup,int indentLevel,
                           const ClassDef *inheritedFrom,const QCString &inheritId) const override;
     void writeQuickMemberLinks(OutputList &ol,const MemberDef *md) const override;
+    void writePageNavigation(OutputList &ol) const override;
     void writeSummaryLinks(OutputList &ol) const override;
     void reclassifyMember(MemberDefMutable *md,MemberType t) override;
     void writeInlineDocumentation(OutputList &ol) const override;
@@ -764,6 +765,8 @@ class ClassDefAliasImpl : public DefinitionAliasMixin<ClassDef>
     { getCdAlias()->writeQuickMemberLinks(ol,md); }
     void writeSummaryLinks(OutputList &ol) const override
     { getCdAlias()->writeSummaryLinks(ol); }
+    void writePageNavigation(OutputList &ol) const override
+    { getCdAlias()->writePageNavigation(ol); }
     void writeInlineDocumentation(OutputList &ol) const override
     { getCdAlias()->writeInlineDocumentation(ol); }
     void writeTagFile(TextStream &ol) const override
@@ -1172,7 +1175,7 @@ void ClassDefImpl::internalInsertMember(MemberDef *md,
                   addMemberToList(MemberListType::PubTypes(),md,TRUE);
                   isSimple=!md->isEnumerate() &&
                            !md->isEnumValue() &&
-                           QCString(md->typeString()).find(")(")==-1; // func ptr typedef
+                           md->typeString().find(")(")==-1; // func ptr typedef
                   break;
                 case Protection::Private:
                   addMemberToList(MemberListType::PriTypes(),md,TRUE);
@@ -1308,9 +1311,9 @@ void ClassDefImpl::internalInsertMember(MemberDef *md,
   if (addToAllList &&
       !(Config_getBool(HIDE_FRIEND_COMPOUNDS) &&
         md->isFriend() &&
-        (QCString(md->typeString())=="friend class" ||
-         QCString(md->typeString())=="friend struct" ||
-         QCString(md->typeString())=="friend union")))
+        (md->typeString()=="friend class" ||
+         md->typeString()=="friend struct" ||
+         md->typeString()=="friend union")))
   {
     //printf("=======> adding member %s to class %s\n",qPrint(md->name()),qPrint(name()));
 
@@ -1322,8 +1325,7 @@ void ClassDefImpl::internalInsertMember(MemberDef *md,
   // then we also need to insert the member in the template instance.
   for (const auto &ti : getTemplateInstances())
   {
-    //printf("member %s of class %s with template instance %s\n",qPrint(md->name()),qPrint(name()),
-    //    qPrint(ti.templSpec));
+    AUTO_TRACE_ADD("member {} of class {} with template instance {}\n",md->name(),name(),ti.templSpec);
     ClassDefMutable *cdm = toClassDefMutable(ti.classDef);
     if (cdm)
     {
@@ -1415,7 +1417,7 @@ static void writeInheritanceSpecifier(OutputList &ol,const BaseClassDef &bcd)
     for (const auto &s : sl)
     {
       if (!first) ol.docify(", ");
-      ol.docify(s.c_str());
+      ol.docify(s);
       first=false;
     }
     ol.docify("]");
@@ -1564,7 +1566,7 @@ void ClassDefImpl::writeBriefDescription(OutputList &ol,bool exampleFlag) const
     ol.popGeneratorState();
     ol.generateDoc(briefFile(),briefLine(),this,nullptr,
                    briefDescription(),TRUE,FALSE,QCString(),
-                   TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                   TRUE,FALSE);
     ol.pushGeneratorState();
     ol.disable(OutputType::RTF);
     ol.writeString(" \n");
@@ -1596,7 +1598,7 @@ void ClassDefImpl::writeDetailedDocumentationBody(OutputList &ol) const
   if (!briefDescription().isEmpty() && repeatBrief)
   {
     ol.generateDoc(briefFile(),briefLine(),this,nullptr,briefDescription(),FALSE,FALSE,
-                   QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                   QCString(),FALSE,FALSE);
   }
   if (!briefDescription().isEmpty() && repeatBrief &&
       !documentation().isEmpty())
@@ -1610,7 +1612,7 @@ void ClassDefImpl::writeDetailedDocumentationBody(OutputList &ol) const
   if (!documentation().isEmpty())
   {
     ol.generateDoc(docFile(),docLine(),this,nullptr,documentation(),TRUE,FALSE,
-                   QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                   QCString(),FALSE,FALSE);
   }
   // write type constraints
   writeTypeConstraints(ol,this,m_typeConstraints);
@@ -1622,7 +1624,7 @@ void ClassDefImpl::writeDetailedDocumentationBody(OutputList &ol) const
         inlineTemplateArgListToDoc(m_tempArgs),    // docStr
         TRUE,         // indexWords
         FALSE,        // isExample
-        QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT)
+        QCString(),FALSE,FALSE
         );
 
   // write examples
@@ -1672,7 +1674,7 @@ void ClassDefImpl::writeDetailedDescription(OutputList &ol, const QCString &/*pa
       ol.popGeneratorState();
     }
 
-    ol.startGroupHeader();
+    ol.startGroupHeader("details");
     ol.parseText(title);
     ol.endGroupHeader();
 
@@ -2296,7 +2298,7 @@ void ClassDefImpl::writeSummaryLinks(OutputList &ol) const
   {
     for (const auto &s : m_vhdlSummaryTitles)
     {
-      ol.writeSummaryLink(QCString(),convertToId(QCString(s)),QCString(s),first);
+      ol.writeSummaryLink(QCString(),convertToId(s),s,first);
       first=FALSE;
     }
   }
@@ -2305,6 +2307,11 @@ void ClassDefImpl::writeSummaryLinks(OutputList &ol) const
     ol.writeString("  </div>\n");
   }
   ol.popGeneratorState();
+}
+
+void ClassDefImpl::writePageNavigation(OutputList &ol) const
+{
+  ol.writePageOutline();
 }
 
 void ClassDefImpl::writeTagFile(TextStream &tagFile) const
@@ -2451,7 +2458,7 @@ void ClassDefImpl::writeInlineDocumentation(OutputList &ol) const
   ol.disable(OutputType::Html);
   {
     // for LaTeX/RTF/Man
-    ol.startGroupHeader(1);
+    ol.startGroupHeader("",1);
     ol.parseText(s);
     ol.endGroupHeader(1);
   }
@@ -2641,9 +2648,11 @@ void ClassDefImpl::writeDeclarationLink(OutputList &ol,bool &found,const QCStrin
       found=TRUE;
     }
     ol.startMemberDeclaration();
-    ol.startMemberItem(anchor(),OutputGenerator::MemberItemType::Normal);
     QCString ctype = compoundTypeString();
     QCString cname = displayName(!localNames);
+    QCString anc = anchor();
+    if (anc.isEmpty()) anc = cname; else anc.prepend(cname+"_");
+    ol.startMemberItem(anc,OutputGenerator::MemberItemType::Normal);
 
     if (lang!=SrcLangExt::VHDL) // for VHDL we swap the name and the type
     {
@@ -2684,7 +2693,7 @@ void ClassDefImpl::writeDeclarationLink(OutputList &ol,bool &found,const QCStrin
       auto ast    { validatingParseDoc(*parser.get(),
                                 briefFile(),briefLine(),this,nullptr,
                                 briefDescription(),FALSE,FALSE,
-                                QCString(),TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT)) };
+                                QCString(),TRUE,FALSE) };
       if (!ast->isEmpty())
       {
         ol.startMemberDescription(anchor());
@@ -2727,7 +2736,7 @@ void ClassDefImpl::addClassAttributes(OutputList &ol) const
     for (const auto &s : sl)
     {
       i++;
-      ol.writeLabel(s.c_str(),i==sl.size());
+      ol.writeLabel(s,i==sl.size());
     }
     ol.endLabels();
   }
@@ -2885,46 +2894,54 @@ QCString ClassDefImpl::title() const
   QCString pageTitle;
   SrcLangExt lang = getLanguage();
 
+  auto getReferenceTitle = [this](std::function<QCString()> translateFunc) -> QCString
+  {
+    return Config_getBool(HIDE_COMPOUND_REFERENCE) ? displayName() : translateFunc();
+  };
+
   if (lang==SrcLangExt::Fortran)
   {
-    pageTitle = theTranslator->trCompoundReferenceFortran(displayName(),
-              m_compType,
-              !m_tempArgs.empty());
+    pageTitle = getReferenceTitle([this](){
+      return theTranslator->trCompoundReferenceFortran(displayName(), m_compType, !m_tempArgs.empty());
+    });
   }
   else if (lang==SrcLangExt::Slice)
   {
-    pageTitle = theTranslator->trCompoundReferenceSlice(displayName(),
-              m_compType,
-              isSliceLocal());
+    pageTitle = getReferenceTitle([this](){
+      return theTranslator->trCompoundReferenceSlice(displayName(), m_compType, isSliceLocal());
+    });
   }
   else if (lang==SrcLangExt::VHDL)
   {
-    pageTitle = theTranslator->trCustomReference(VhdlDocGen::getClassTitle(this));
+    pageTitle = getReferenceTitle([this](){
+      return theTranslator->trCustomReference(VhdlDocGen::getClassTitle(this));
+    });
   }
   else if (isJavaEnum())
   {
-    pageTitle = theTranslator->trEnumReference(displayName());
+    pageTitle = getReferenceTitle([this](){
+      return theTranslator->trEnumReference(displayName());
+    });
   }
   else if (m_compType==Service)
   {
-    pageTitle = theTranslator->trServiceReference(displayName());
+    pageTitle = getReferenceTitle([this](){
+      return theTranslator->trServiceReference(displayName());
+    });
   }
   else if (m_compType==Singleton)
   {
-    pageTitle = theTranslator->trSingletonReference(displayName());
+    pageTitle = getReferenceTitle([this](){
+      return theTranslator->trSingletonReference(displayName());
+    });
   }
   else
   {
-    if (Config_getBool(HIDE_COMPOUND_REFERENCE))
-    {
-      pageTitle = displayName();
-    }
-    else
-    {
-      pageTitle = theTranslator->trCompoundReference(displayName(),
-                m_compType == Interface && getLanguage()==SrcLangExt::ObjC ? Class : m_compType,
-                !m_tempArgs.empty());
-    }
+    pageTitle = getReferenceTitle([this](){
+      return theTranslator->trCompoundReference(displayName(),
+              m_compType == Interface && getLanguage()==SrcLangExt::ObjC ? Class : m_compType,
+              !m_tempArgs.empty());
+    });
   }
   return pageTitle;
 }
@@ -2964,7 +2981,21 @@ void ClassDefImpl::writeDocumentation(OutputList &ol) const
   }
 
   AUTO_TRACE("name='{}' getOutputFileBase='{}'",name(),getOutputFileBase());
-  startFile(ol,getOutputFileBase(),name(),pageTitle,hli,!generateTreeView);
+  bool hasAllMembersLink=false;
+  for (const auto &lde : LayoutDocManager::instance().docEntries(LayoutDocManager::Class))
+  {
+    if (lde->kind()==LayoutDocEntry::ClassAllMembersLink)
+    {
+      hasAllMembersLink = true;
+      break;
+    }
+  }
+  QCString memListFile;
+  if (hasAllMembersLink && !m_allMemberNameInfoLinkedMap.empty() && !Config_getBool(OPTIMIZE_OUTPUT_FOR_C))
+  {
+    memListFile = getMemberListFileName();
+  }
+  startFile(ol,getOutputFileBase(),name(),pageTitle,hli,!generateTreeView,QCString(),0,memListFile);
   if (!generateTreeView)
   {
     if (getOuterScope()!=Doxygen::globalScope)
@@ -3033,7 +3064,7 @@ void ClassDefImpl::writeQuickMemberLinks(OutputList &ol,const MemberDef *current
           {
             ol.writeString("          <tr><td class=\"navtab\">");
           }
-          ol.writeString("<a class=\"navtab\" ");
+          ol.writeString("<span class=\"label\"><a ");
           ol.writeString("href=\"");
           if (createSubDirs) ol.writeString("../../");
           QCString url = md->getOutputFileBase();
@@ -3041,7 +3072,7 @@ void ClassDefImpl::writeQuickMemberLinks(OutputList &ol,const MemberDef *current
           ol.writeString(url+"#"+md->anchor());
           ol.writeString("\">");
           ol.writeString(convertToHtml(md->name()));
-          ol.writeString("</a>");
+          ol.writeString("</a></span>");
           ol.writeString("</td></tr>\n");
         }
       }
@@ -3340,7 +3371,7 @@ void ClassDefImpl::writeMemberList(OutputList &ol) const
               ol.writeString("<span class=\"mlabel\">");
               firstSpan=false;
             }
-            ol.docify(s.c_str());
+            ol.docify(s);
           }
           if (!firstSpan) ol.writeString("</span>");
         }
@@ -4355,6 +4386,7 @@ ClassDef *ClassDefImpl::insertTemplateInstance(const QCString &fileName,
 
 void ClassDefImpl::insertExplicitTemplateInstance(ClassDef *templateClass,const QCString &templSpec)
 {
+  AUTO_TRACE("this={} cd={} templSpec={}",name(),templateClass->name(),templSpec);
   m_templateInstances.emplace_back(templSpec,templateClass);
 }
 
@@ -4372,9 +4404,9 @@ void ClassDefImpl::addMemberToTemplateInstance(const MemberDef *md,
                                                const ArgumentList &templateArguments,
                                                const QCString &templSpec)
 {
+  AUTO_TRACE("this={} md={}",name(),md->name());
   auto actualArguments_p = stringToArgumentList(getLanguage(),templSpec);
   auto imd = md->createTemplateInstanceMember(templateArguments,actualArguments_p);
-  //printf("%s->setMemberClass(%p)\n",qPrint(imd->name()),this);
   auto mmd = toMemberDefMutable(imd.get());
   mmd->setMemberClass(this);
   mmd->setTemplateMaster(md);
@@ -4396,12 +4428,17 @@ void ClassDefImpl::addMemberToTemplateInstance(const MemberDef *md,
 
 void ClassDefImpl::addMembersToTemplateInstance(const ClassDef *cd,const ArgumentList &templateArguments,const QCString &templSpec)
 {
+  AUTO_TRACE("this={} cd={} templSpec={}",name(),cd->name(),templSpec);
   //printf("%s::addMembersToTemplateInstance(%s,%s)\n",qPrint(name()),qPrint(cd->name()),templSpec);
   for (const auto &mni : cd->memberNameInfoLinkedMap())
   {
     for (const auto &mi : *mni)
     {
-      addMemberToTemplateInstance(mi->memberDef(),templateArguments,templSpec);
+      const MemberDef *md = mi->memberDef();
+      if (m_allMemberNameInfoLinkedMap.find(md->name())==nullptr) // only insert the member if not hidden by one with the same name (#11541)
+      {
+        addMemberToTemplateInstance(md,templateArguments,templSpec);
+      }
     }
   }
   // also instantatie members for nested classes
@@ -4574,14 +4611,17 @@ void ClassDefImpl::sortMemberLists()
   {
     if (ml->needsSorting()) { ml->sort(); ml->setNeedsSorting(FALSE); }
   }
-  std::stable_sort(m_innerClasses.begin(),
-            m_innerClasses.end(),
-            [](const auto &c1,const auto &c2)
-            {
-               return Config_getBool(SORT_BY_SCOPE_NAME)                ?
-                      qstricmp_sort(c1->name(),      c2->name()     )<0 :
-                      qstricmp_sort(c1->className(), c2->className())<0 ;
-            });
+  if (Config_getBool(SORT_BRIEF_DOCS))
+  {
+    std::stable_sort(m_innerClasses.begin(),
+              m_innerClasses.end(),
+              [](const auto &c1,const auto &c2)
+              {
+                 return Config_getBool(SORT_BY_SCOPE_NAME)                ?
+                        qstricmp_sort(c1->name(),      c2->name()     )<0 :
+                        qstricmp_sort(c1->className(), c2->className())<0 ;
+              });
+  }
 }
 
 int ClassDefImpl::countMemberDeclarations(MemberListType lt,const ClassDef *inheritedFrom,
@@ -4887,7 +4927,7 @@ void ClassDefImpl::writeMemberDocumentation(OutputList &ol,MemberListType lt,con
 {
   //printf("%s: ClassDefImpl::writeMemberDocumentation()\n",qPrint(name()));
   MemberList * ml = getMemberList(lt);
-  if (ml) ml->writeDocumentation(ol,displayName(),this,title,FALSE,showInline);
+  if (ml) ml->writeDocumentation(ol,displayName(),this,title,ml->listType().toLabel(),FALSE,showInline);
 }
 
 void ClassDefImpl::writeSimpleMemberDocumentation(OutputList &ol,MemberListType lt) const

@@ -174,6 +174,7 @@ class FileDefImpl : public DefinitionMixin<FileDef>
     void writeMemberPages(OutputList &ol) override;
     void writeQuickMemberLinks(OutputList &ol,const MemberDef *currentMd) const override;
     void writeSummaryLinks(OutputList &ol) const override;
+    void writePageNavigation(OutputList &ol) const override;
     void writeTagFile(TextStream &t) override;
     void writeSourceHeader(OutputList &ol) override;
     void writeSourceBody(OutputList &ol,ClangTUParser *clangParser) override;
@@ -278,7 +279,7 @@ std::unique_ptr<FileDef> createFileDef(const QCString &p,const QCString &n,const
 */
 FileDefImpl::FileDefImpl(const QCString &p,const QCString &nm,
                  const QCString &lref,const QCString &dn)
-   : DefinitionMixin(QCString(p)+nm,1,1,nm,nullptr,nullptr,!p.isEmpty())
+   : DefinitionMixin(p+nm,1,1,nm,nullptr,nullptr,!p.isEmpty())
 {
   m_path=removeLongPathMarker(p);
   m_filePath=p+nm;
@@ -480,7 +481,7 @@ void FileDefImpl::writeDetailedDescription(OutputList &ol,const QCString &title)
       ol.disableAllBut(OutputType::Html);
       ol.writeAnchor(QCString(),"details");
     ol.popGeneratorState();
-    ol.startGroupHeader();
+    ol.startGroupHeader("details");
     ol.parseText(title);
     ol.endGroupHeader();
 
@@ -488,7 +489,7 @@ void FileDefImpl::writeDetailedDescription(OutputList &ol,const QCString &title)
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF))
     {
       ol.generateDoc(briefFile(),briefLine(),this,nullptr,briefDescription(),FALSE,FALSE,
-                     QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                     QCString(),FALSE,FALSE);
     }
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF) &&
         !documentation().isEmpty())
@@ -505,7 +506,7 @@ void FileDefImpl::writeDetailedDescription(OutputList &ol,const QCString &title)
     if (!documentation().isEmpty())
     {
       ol.generateDoc(docFile(),docLine(),this,nullptr,documentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                     QCString(),FALSE,FALSE);
     }
     //printf("Writing source ref for file %s\n",qPrint(name()));
     if (Config_getBool(SOURCE_BROWSER))
@@ -538,7 +539,7 @@ void FileDefImpl::writeBriefDescription(OutputList &ol)
     auto ast    { validatingParseDoc(*parser.get(),
                                      briefFile(),briefLine(),this,nullptr,
                                      briefDescription(),TRUE,FALSE,
-                                     QCString(),TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT)) };
+                                     QCString(),TRUE,FALSE) };
     if (!ast->isEmpty())
     {
       ol.startParagraph();
@@ -845,6 +846,11 @@ void FileDefImpl::writeSummaryLinks(OutputList &ol) const
   ol.popGeneratorState();
 }
 
+void FileDefImpl::writePageNavigation(OutputList &ol) const
+{
+  ol.writePageOutline();
+}
+
 /*! Write the documentation page for this file to the file of output
     generators \a ol.
 */
@@ -867,7 +873,15 @@ void FileDefImpl::writeDocumentation(OutputList &ol)
     versionTitle=("("+m_fileVersion+")");
   }
   QCString title = m_docname+versionTitle;
-  QCString pageTitle=theTranslator->trFileReference(m_docname);
+  QCString pageTitle;
+  if (Config_getBool(HIDE_COMPOUND_REFERENCE))
+  {
+    pageTitle=m_docname;
+  }
+  else
+  {
+    pageTitle=theTranslator->trFileReference(m_docname);
+  }
 
   if (getDirDef())
   {
@@ -880,12 +894,28 @@ void FileDefImpl::writeDocumentation(OutputList &ol)
     startTitle(ol,getOutputFileBase(),this);
     ol.pushGeneratorState();
       ol.disableAllBut(OutputType::Html);
-      ol.parseText(theTranslator->trFileReference(displayName())); // Html only
+      if (Config_getBool(HIDE_COMPOUND_REFERENCE))
+      {
+        ol.parseText(displayName()); // Html only
+      }
+      else
+      {
+        ol.parseText(theTranslator->trFileReference(displayName())); // Html only
+      }
       ol.enableAll();
       ol.disable(OutputType::Html);
-      ol.parseText(Config_getBool(FULL_PATH_NAMES) ?  // other output formats
-                   pageTitle :
-                   theTranslator->trFileReference(name()));
+      if (Config_getBool(HIDE_COMPOUND_REFERENCE))
+      {
+        ol.parseText(Config_getBool(FULL_PATH_NAMES) ?  // other output formats
+                     pageTitle :
+                     name());
+      }
+      else
+      {
+        ol.parseText(Config_getBool(FULL_PATH_NAMES) ?  // other output formats
+                     pageTitle :
+                     theTranslator->trFileReference(name()));
+      }
     ol.popGeneratorState();
     addGroupListToTitle(ol,this);
     endTitle(ol,getOutputFileBase(),title);
@@ -1089,13 +1119,13 @@ void FileDefImpl::writeQuickMemberLinks(OutputList &ol,const MemberDef *currentM
           {
             ol.writeString("          <tr><td class=\"navtab\">");
           }
-          ol.writeString("<a class=\"navtab\" ");
+          ol.writeString("<span class=\"label\"><a ");
           ol.writeString("href=\"");
           if (createSubDirs) ol.writeString("../../");
           ol.writeString(fn+"#"+md->anchor());
           ol.writeString("\">");
           ol.writeString(convertToHtml(md->localName()));
-          ol.writeString("</a>");
+          ol.writeString("</a></span>");
           ol.writeString("</td></tr>\n");
         }
       }
@@ -1219,7 +1249,7 @@ void FileDefImpl::writeSourceBody(OutputList &ol,[[maybe_unused]] ClangTUParser 
 void FileDefImpl::writeSourceFooter(OutputList &ol)
 {
   ol.endContents();
-  endFileWithNavPath(ol,this);
+  endFileWithNavPath(ol,this,false);
   ol.enableAll();
 }
 
@@ -1275,11 +1305,12 @@ void FileDefImpl::addMembersToMemberGroup()
 void FileDefImpl::insertMember(MemberDef *md)
 {
   if (md->isHidden()) return;
-  //printf("%s:FileDefImpl::insertMember(%s (=%p) list has %d elements)\n",
-  //    qPrint(name()),qPrint(md->name()),md,allMemberList.count());
   MemberList *allMemberList = getMemberList(MemberListType::AllMembersList());
+  //printf("%s:FileDefImpl::insertMember(%s (=%p) list has %zu elements)\n",
+  //    qPrint(name()),qPrint(md->name()),(void*)md,allMemberList ? allMemberList->size() : 0);
   if (allMemberList && allMemberList->contains(md))
   {
+    //printf("already added\n");
     return;
   }
 
@@ -1743,6 +1774,13 @@ void FileDefImpl::sortMemberLists()
     std::stable_sort(m_structs.begin(),   m_structs.end(),   classComp);
     std::stable_sort(m_exceptions.begin(),m_exceptions.end(),classComp);
 
+    auto conceptComp = [](const ConceptLinkedRefMap::Ptr &c1,const ConceptLinkedRefMap::Ptr &c2)
+    {
+      return qstricmp_sort(c1->name(),c2->name())<0;
+    };
+
+    std::stable_sort(m_concepts.begin(), m_concepts.end(), conceptComp);
+
     auto namespaceComp = [](const NamespaceLinkedRefMap::Ptr &n1,const NamespaceLinkedRefMap::Ptr &n2)
     {
       return qstricmp_sort(n1->name(),n2->name())<0;
@@ -1785,7 +1823,7 @@ void FileDefImpl::writeMemberDeclarations(OutputList &ol,MemberListType lt,const
 void FileDefImpl::writeMemberDocumentation(OutputList &ol,MemberListType lt,const QCString &title)
 {
   MemberList * ml = getMemberList(lt);
-  if (ml) ml->writeDocumentation(ol,name(),this,title);
+  if (ml) ml->writeDocumentation(ol,name(),this,title,ml->listType().toLabel());
 }
 
 bool FileDefImpl::isLinkableInProject() const
@@ -1818,7 +1856,14 @@ void FileDefImpl::getAllIncludeFilesRecursively(StringVector &incFiles) const
 
 QCString FileDefImpl::title() const
 {
-  return theTranslator->trFileReference(name());
+  if (Config_getBool(HIDE_COMPOUND_REFERENCE))
+  {
+    return name();
+  }
+  else
+  {
+    return theTranslator->trFileReference(name());
+  }
 }
 
 QCString FileDefImpl::fileVersion() const

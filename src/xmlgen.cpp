@@ -183,14 +183,14 @@ class TextGeneratorXMLImpl : public TextGeneratorIntf
     TextGeneratorXMLImpl(TextStream &t): m_t(t) {}
     void writeString(std::string_view s,bool /*keepSpaces*/) const override
     {
-      writeXMLString(m_t,QCString(s));
+      writeXMLString(m_t,s);
     }
     void writeBreak(int) const override {}
     void writeLink(const QCString &extRef,const QCString &file,
                    const QCString &anchor,std::string_view text
                   ) const override
     {
-      writeXMLLink(m_t,extRef,file,anchor,QCString(text),QCString());
+      writeXMLLink(m_t,extRef,file,anchor,text,QCString());
     }
   private:
     TextStream &m_t;
@@ -457,7 +457,7 @@ static void writeXMLDocBlock(TextStream &t,
   auto parser { createDocParser() };
   auto ast    { validatingParseDoc(*parser.get(),
                                    fileName,lineNr,scope,md,text,FALSE,FALSE,
-                                   QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT)) };
+                                   QCString(),FALSE,FALSE) };
   auto astImpl = dynamic_cast<const DocNodeAST*>(ast.get());
   if (astImpl)
   {
@@ -583,6 +583,54 @@ static QCString memberOutputFileBase(const MemberDef *md)
   return md->getOutputFileBase();
 }
 
+// Removes a keyword from a given string
+// @param str string from which to strip the keyword
+// @param needSpace true if spacing is required around the keyword
+// @return true if the keyword was removed, false otherwise
+static bool stripKeyword(QCString& str, const char *keyword, bool needSpace)
+{
+  bool found      = false;
+  int searchStart = 0;
+  int len         = static_cast<int>(strlen(keyword));
+  int searchEnd   = static_cast<int>(str.size());
+  while (searchStart<searchEnd)
+  {
+    int index = str.find(keyword, searchStart);
+    if (index==-1)
+    {
+      break; // no more occurrences found
+    }
+    int end = index + len;
+    if (needSpace)
+    {
+      if ((index>0        && str[index-1]!=' ') ||  // at the start of the string or preceded by a space, or
+          (end!=searchEnd && str[end]    !=' ')     // at the end of the string or followed by a space.
+         )
+      {
+        searchStart = end;
+        continue; // no a standalone word
+      }
+    }
+    if (needSpace && index>0) // strip with space before keyword
+    {
+      str.remove(index-1, len+1);
+      searchEnd -= (len+1);
+    }
+    else if (needSpace && end<searchEnd) // strip with space after string starting with keyword
+    {
+      str.remove(index, len+1);
+      searchEnd -= (len+1);
+    }
+    else // strip just keyword
+    {
+      str.remove(index, len);
+      searchEnd -= len;
+    }
+    found = true;
+  }
+  return found;
+}
+
 static QCString extractNoExcept(QCString &argsStr)
 {
   QCString expr;
@@ -689,6 +737,26 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
     {
       typeStr=argsStr.mid(i+2).stripWhiteSpace();
       argsStr=argsStr.left(i).stripWhiteSpace();
+      if (stripKeyword(typeStr, "override", true))
+      {
+        argsStr += " override";
+      }
+      if (stripKeyword(typeStr, "final", true))
+      {
+        argsStr += " final";
+      }
+      if (stripKeyword(typeStr, "=0", false))
+      {
+        argsStr += "=0";
+      }
+      if (stripKeyword(typeStr, "=default", false))
+      {
+        argsStr += "=default";
+      }
+      if (stripKeyword(typeStr, "=delete", false))
+      {
+        argsStr += "=delete";
+      }
       i=defStr.find("auto ");
       if (i!=-1)
       {
@@ -721,14 +789,7 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
   }
   //enum { define_t,variable_t,typedef_t,enum_t,function_t } xmlType = function_t;
 
-  t << "\" prot=\"";
-  switch (md->protection())
-  {
-    case Protection::Public:    t << "public";     break;
-    case Protection::Protected: t << "protected";  break;
-    case Protection::Private:   t << "private";    break;
-    case Protection::Package:   t << "package";    break;
-  }
+  t << "\" prot=\"" << to_string_lower(md->protection());
   t << "\"";
 
   t << " static=\"";
@@ -822,14 +883,7 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
       t << " volatile=\"yes\"";
     }
 
-    t << " virt=\"";
-    switch (md->virtualness())
-    {
-      case Specifier::Normal:  t << "non-virtual";  break;
-      case Specifier::Virtual: t << "virtual";      break;
-      case Specifier::Pure:    t << "pure-virtual"; break;
-      default: ASSERT(0);
-    }
+    t << " virt=\"" << to_string_lower(md->virtualness());
     t << "\"";
   }
 
@@ -1020,7 +1074,7 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
 
   for (const auto &qmd : md->getQualifiers())
   {
-    t << "        <qualifier>" << convertToXML(qmd.c_str()) << "</qualifier>\n";
+    t << "        <qualifier>" << convertToXML(qmd) << "</qualifier>\n";
   }
 
   if (md->isFriendClass()) // for friend classes we show a link to the class as a "parameter"
@@ -1148,14 +1202,7 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
          << convertToXML(emd->name()) << "</name></member>\n";
 
       t << "        <enumvalue id=\"" << memberOutputFileBase(md) << "_1"
-        << emd->anchor() << "\" prot=\"";
-      switch (emd->protection())
-      {
-        case Protection::Public:    t << "public";    break;
-        case Protection::Protected: t << "protected"; break;
-        case Protection::Private:   t << "private";   break;
-        case Protection::Package:   t << "package";   break;
-      }
+        << emd->anchor() << "\" prot=\"" << to_string_lower(emd->protection());
       t << "\">\n";
       t << "          <name>";
       writeXMLString(t,emd->name());
@@ -1283,22 +1330,8 @@ static void writeListOfAllMembers(const ClassDef *cd,TextStream &t)
         Protection prot = mi->prot();
         Specifier virt=md->virtualness();
         t << "      <member refid=\"" << memberOutputFileBase(md) << "_1" <<
-          md->anchor() << "\" prot=\"";
-        switch (prot)
-        {
-          case Protection::Public:    t << "public";    break;
-          case Protection::Protected: t << "protected"; break;
-          case Protection::Private:   t << "private";   break;
-          case Protection::Package:   t << "package";   break;
-        }
-        t << "\" virt=\"";
-        switch(virt)
-        {
-          case Specifier::Normal:  t << "non-virtual";  break;
-          case Specifier::Virtual: t << "virtual";      break;
-          case Specifier::Pure:    t << "pure-virtual"; break;
-        }
-        t << "\"";
+          md->anchor() << "\" prot=\"" << to_string_lower(prot);
+        t << "\" virt=\"" << to_string_lower(virt) << "\"";
         if (!mi->ambiguityResolutionScope().isEmpty())
         {
           t << " ambiguityscope=\"" << convertToXML(mi->ambiguityResolutionScope()) << "\"";
@@ -1318,14 +1351,7 @@ static void writeInnerClasses(const ClassLinkedRefMap &cl,TextStream &t)
     if (!cd->isHidden() && !cd->isAnonymous())
     {
       t << "    <innerclass refid=\"" << classOutputFileBase(cd)
-        << "\" prot=\"";
-      switch(cd->protection())
-      {
-        case Protection::Public:    t << "public";     break;
-        case Protection::Protected: t << "protected";  break;
-        case Protection::Private:   t << "private";    break;
-        case Protection::Package:   t << "package";    break;
-      }
+        << "\" prot=\"" << to_string_lower(cd->protection());
       t << "\">" << convertToXML(cd->name()) << "</innerclass>\n";
     }
   }
@@ -1499,13 +1525,7 @@ static void generateXMLForClass(const ClassDef *cd,TextStream &ti)
     << classOutputFileBase(cd) << "\" kind=\""
     << cd->compoundTypeString() << "\" language=\""
     << langToString(cd->getLanguage()) << "\" prot=\"";
-  switch (cd->protection())
-  {
-    case Protection::Public:    t << "public";    break;
-    case Protection::Protected: t << "protected"; break;
-    case Protection::Private:   t << "private";   break;
-    case Protection::Package:   t << "package";   break;
-  }
+  t << to_string_lower(cd->protection());
   if (cd->isFinal()) t << "\" final=\"yes";
   if (cd->isSealed()) t << "\" sealed=\"yes";
   if (cd->isAbstract()) t << "\" abstract=\"yes";
@@ -1522,21 +1542,11 @@ static void generateXMLForClass(const ClassDef *cd,TextStream &ti)
     {
       t << "refid=\"" << classOutputFileBase(bcd.classDef) << "\" ";
     }
+    if (bcd.prot == Protection::Package) ASSERT(0);
     t << "prot=\"";
-    switch (bcd.prot)
-    {
-      case Protection::Public:    t << "public";    break;
-      case Protection::Protected: t << "protected"; break;
-      case Protection::Private:   t << "private";   break;
-      case Protection::Package: ASSERT(0); break;
-    }
+    t << to_string_lower(bcd.prot);
     t << "\" virt=\"";
-    switch(bcd.virt)
-    {
-      case Specifier::Normal:  t << "non-virtual";  break;
-      case Specifier::Virtual: t << "virtual";      break;
-      case Specifier::Pure:    t <<"pure-virtual"; break;
-    }
+    t << to_string_lower(bcd.virt);
     t << "\">";
     if (!bcd.templSpecifiers.isEmpty())
     {
@@ -1553,23 +1563,13 @@ static void generateXMLForClass(const ClassDef *cd,TextStream &ti)
   }
   for (const auto &bcd : cd->subClasses())
   {
+    if (bcd.prot == Protection::Package) ASSERT(0);
     t << "    <derivedcompoundref refid=\""
       << classOutputFileBase(bcd.classDef)
       << "\" prot=\"";
-    switch (bcd.prot)
-    {
-      case Protection::Public:    t << "public";    break;
-      case Protection::Protected: t << "protected"; break;
-      case Protection::Private:   t << "private";   break;
-      case Protection::Package: ASSERT(0); break;
-    }
+    t << to_string_lower(bcd.prot);
     t << "\" virt=\"";
-    switch (bcd.virt)
-    {
-      case Specifier::Normal:  t << "non-virtual";  break;
-      case Specifier::Virtual: t << "virtual";      break;
-      case Specifier::Pure:    t << "pure-virtual"; break;
-    }
+    t << to_string_lower(bcd.virt);
     t << "\">" << convertToXML(bcd.classDef->displayName())
       << "</derivedcompoundref>\n";
   }
@@ -1602,7 +1602,7 @@ static void generateXMLForClass(const ClassDef *cd,TextStream &ti)
 
   for (const auto &qcd : cd->getQualifiers())
   {
-    t << "    <qualifier>" << convertToXML(qcd.c_str()) << "</qualifier>\n";
+    t << "    <qualifier>" << convertToXML(qcd) << "</qualifier>\n";
   }
 
   t << "    <briefdescription>\n";
@@ -1869,7 +1869,7 @@ static void generateXMLForFile(FileDef *fd,TextStream &ti)
       t << " refid=\"" << inc.fileDef->getOutputFileBase() << "\"";
     }
     t << " local=\"" << ((inc.kind & IncludeKind_LocalMask) ? "yes" : "no") << "\">";
-    t << inc.includeName;
+    t << convertToXML(inc.includeName);
     t << "</includes>\n";
   }
 
@@ -1881,7 +1881,7 @@ static void generateXMLForFile(FileDef *fd,TextStream &ti)
       t << " refid=\"" << inc.fileDef->getOutputFileBase() << "\"";
     }
     t << " local=\"" << ((inc.kind &IncludeKind_LocalMask) ? "yes" : "no") << "\">";
-    t << inc.includeName;
+    t << convertToXML(inc.includeName);
     t << "</includedby>\n";
   }
 
@@ -2153,7 +2153,13 @@ static void generateXMLForPage(PageDef *pd,TextStream &ti,bool isExample)
           QCString label = convertToXML(si->label());
           if (titleDoc.isEmpty()) titleDoc = label;
           incIndent("<tocsect>");
-          writeIndent(); t << "<name>" << titleDoc << "</name>\n";
+          writeIndent(); t << "<name>" << titleDoc << "</name>\n"; // kept for backwards compatibility
+          writeIndent(); t << "<docs>";
+          if (!si->title().isEmpty())
+          {
+            writeXMLDocBlock(t,pd->docFile(),pd->docLine(),pd,nullptr,si->title());
+          }
+          t << "</docs>\n";
           writeIndent(); t << "<reference>"  <<  convertToXML(pageName) << "_1" << label << "</reference>\n";
           inLi[nextLevel]=true;
           level = nextLevel;

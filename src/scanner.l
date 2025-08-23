@@ -211,6 +211,7 @@ struct scannerYY_state
   int              docBlockContext = 0;
   TextStream       docBlock;
   QCString         docBlockName;
+  bool             isCodeBlock = false;
   bool             docBlockInBody = false;
   bool             docBlockAutoBrief = false;
   char             docBlockTerm = '\0';
@@ -251,10 +252,8 @@ static QCString stripFuncPtr(const QCString &type);
 static bool nameIsOperator(QCString &name);
 void fixArgumentListForJavaScript(ArgumentList &al);
 static bool startOfRequiresExpression(const QCString &req);
-static QCString extractBeginRawStringDelimiter(const char *str);
-static QCString extractEndRawStringDelimiter(const char *str);
 
-// forward declarations for statefull functions
+// forward declarations for stateful functions
 static void initParser(yyscan_t yyscanner);
 static void initEntry(yyscan_t yyscanner);
 static void lineCount(yyscan_t yyscanner);
@@ -271,7 +270,7 @@ static void addKnRArgInfo(yyscan_t yyscanner,const QCString &type,const QCString
 static int yyread(yyscan_t yyscanner,char *buf,int max_size);
 static void setJavaProtection(yyscan_t yyscanner);
 static void storeClangId(yyscan_t yyscanner,const char *id);
-static void startVerbatimBlock(yyscan_t yyscanner,const QCString &blockName,size_t fencedSize=0);
+static void startVerbatimBlock(yyscan_t yyscanner,const QCString &blockName,size_t fencedSize=0,bool codeBlock=false);
 static bool endVerbatimBlock(yyscan_t yyscanner,const QCString &blockName,size_t fencedSize=0);
 
 
@@ -2098,7 +2097,9 @@ NONLopt [^\n]*
                                           yyextra->current->bodyLine = yyextra->yyLineNr;
                                           yyextra->current->bodyColumn = yyextra->yyColNr;
                                           yyextra->lastInitializerContext = UsingAlias;
+                                          yyextra->sharpCount=0;
                                           yyextra->initBracketCount=0;
+                                          storeClangId(yyscanner,yyextra->current->name.data());
                                           BEGIN(ReadInitializer);
                                         }
 <UsingAlias>";"                         {
@@ -2343,7 +2344,7 @@ NONLopt [^\n]*
                                           unput(';');
                                           BEGIN(FindMembers);
                                         }
-<QtPropType>{B}+                        {
+<QtPropType>{BN}+                       {
                                           yyextra->current->name+=yytext;
                                         }
 <QtPropType>"*"                         {
@@ -2355,24 +2356,24 @@ NONLopt [^\n]*
                                           yyextra->current->type+= yyextra->current->name;
                                           yyextra->current->name=yytext;
                                         }
-<QtPropType,QtPropAttr>{B}+"READ"{B}+   {
+<QtPropType,QtPropAttr>{BN}+"READ"{BN}+   {
                                           yyextra->current->spec.setReadable(true);
                                           BEGIN(QtPropRead);
                                         }
-<QtPropType,QtPropAttr>{B}+"WRITE"{B}+  {
+<QtPropType,QtPropAttr>{BN}+"WRITE"{BN}+  {
                                           yyextra->current->spec.setWritable(true);
                                           BEGIN(QtPropWrite);
                                         }
-<QtPropType,QtPropAttr>{B}+"MEMBER"{B}+{ID}     | // member property => not supported yet
-<QtPropType,QtPropAttr>{B}+"RESET"{B}+{ID}      | // reset method => not supported yet
-<QtPropType,QtPropAttr>{B}+"SCRIPTABLE"{B}+{ID} | // scriptable property => not supported yet
-<QtPropType,QtPropAttr>{B}+"DESIGNABLE"{B}+{ID} | // designable property => not supported yet
-<QtPropType,QtPropAttr>{B}+"NOTIFY"{B}+{ID}     | // notify property => not supported yet
-<QtPropType,QtPropAttr>{B}+"REVISION"{B}+{ID}   | // revision property => not supported yet
-<QtPropType,QtPropAttr>{B}+"STORED"{B}+{ID}     | // stored property => not supported yet
-<QtPropType,QtPropAttr>{B}+"USER"{B}+{ID}       | // user property => not supported yet
-<QtPropType,QtPropAttr>{B}+"CONSTANT"{B}        | // constant property => not supported yet
-<QtPropType,QtPropAttr>{B}+"FINAL"{B}           { // final property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"MEMBER"{BN}+{ID}     | // member property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"RESET"{BN}+{ID}      | // reset method => not supported yet
+<QtPropType,QtPropAttr>{BN}+"SCRIPTABLE"{BN}+{ID} | // scriptable property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"DESIGNABLE"{BN}+{ID} | // designable property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"NOTIFY"{BN}+{ID}     | // notify property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"REVISION"{BN}+{ID}   | // revision property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"STORED"{BN}+{ID}     | // stored property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"USER"{BN}+{ID}       | // user property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"CONSTANT"{BN}        | // constant property => not supported yet
+<QtPropType,QtPropAttr>{BN}+"FINAL"{BN}           { // final property => not supported yet
                                           BEGIN(QtPropAttr);
                                         }
 <QtPropRead>{ID}                        {
@@ -3092,6 +3093,7 @@ NONLopt [^\n]*
                                           yyextra->current->bodyColumn = yyextra->yyColNr;
                                           yyextra->current->initializer.str(yytext);
                                           yyextra->lastInitializerContext = YY_START;
+                                          yyextra->sharpCount=0;
                                           yyextra->initBracketCount=0;
                                           yyextra->current->mtype = yyextra->mtype = MethodTypes::Property;
                                           yyextra->current->spec.setGettable(true);
@@ -3102,6 +3104,7 @@ NONLopt [^\n]*
                                           yyextra->current->bodyColumn = yyextra->yyColNr;
                                           yyextra->current->initializer.str(yytext);
                                           yyextra->lastInitializerContext = YY_START;
+                                          yyextra->sharpCount=0;
                                           yyextra->initBracketCount=0;
                                           BEGIN(ReadInitializer);
                                         }
@@ -3245,15 +3248,26 @@ NONLopt [^\n]*
 <ReadInitializer,ReadInitializerPtr>("<<"|"<=") {
                                           yyextra->current->initializer << yytext;
                                         }
-<ReadInitializer,ReadInitializerPtr>(">>"|">=") {
+<ReadInitializer,ReadInitializerPtr>(">>") {
+                                          if (yyextra->initBracketCount<=yyextra->sharpCount && yyextra->sharpCount>=2)
+                                          {
+                                            // heuristic to detect '>>' in A<B<C>>::D as '> >', but not e.g. 'A>>B' or A<B<(C>>2)>::D>
+                                            yyextra->initBracketCount-=2;
+                                            yyextra->sharpCount-=2;
+                                          }
+                                          yyextra->current->initializer << yytext;
+                                        }
+<ReadInitializer,ReadInitializerPtr>(">=") {
                                           yyextra->current->initializer << yytext;
                                         }
 <ReadInitializer,ReadInitializerPtr>[<\[{(]             {
                                           yyextra->initBracketCount++;
+                                          yyextra->sharpCount++;
                                           yyextra->current->initializer << *yytext;
                                         }
 <ReadInitializer,ReadInitializerPtr>[>\]})]             {
                                           yyextra->initBracketCount--;
+                                          yyextra->sharpCount--;
                                           if (*yytext=='}')
                                           {
                                             yyextra->current->endBodyLine=yyextra->yyLineNr;
@@ -3686,7 +3700,7 @@ NONLopt [^\n]*
 <GCopyCurly>^"#"{B}+[0-9]+{B}+"\""[^\"\n]+"\""{B}+"1"{B}*\n? { // start of included file marker
                                         }
 <GCopyCurly>^"#"{B}+[0-9]+{B}+"\""[^\"\n]+"\""{B}+"2"{B}*\n? { // end of included file marker
-                                          QCString line = QCString(yytext);
+                                          QCString line = yytext;
                                           int s = line.find(' ');
                                           int e = line.find('"',s);
                                           yyextra->yyLineNr = line.mid(s,e-s).toInt();
@@ -4117,12 +4131,14 @@ NONLopt [^\n]*
                                           // Java enum initializer
                                           unput(*yytext);
                                           yyextra->lastInitializerContext = YY_START;
+                                          yyextra->sharpCount=0;
                                           yyextra->initBracketCount=0;
                                           yyextra->current->initializer.str("=");
                                           BEGIN(ReadInitializer);
                                         }
 <FindFields>"="                         {
                                           yyextra->lastInitializerContext = YY_START;
+                                          yyextra->sharpCount=0;
                                           yyextra->initBracketCount=0;
                                           yyextra->current->initializer.str(yytext);
                                           BEGIN(ReadInitializer);
@@ -4645,6 +4661,7 @@ NONLopt [^\n]*
                                         }
 <MemberSpec>"="                         {
                                           yyextra->lastInitializerContext=YY_START;
+                                          yyextra->sharpCount=0;
                                           yyextra->initBracketCount=0;
                                           yyextra->current->initializer.str(yytext);
                                           BEGIN(ReadInitializer);
@@ -5057,7 +5074,7 @@ NONLopt [^\n]*
                                           yyextra->fullArgString+=yytext;
                                           BEGIN(CopyArgVerbatim);
                                         }
-<CopyArgVerbatim>[\\@]("endverbatim"|"endiliteral"|"endlatexonly"|"endhtmlonly"|"endxmlonly"|"enddocbookonly"|"endmanonly"|"endrtfonly"|"enddot"|"endmsc"|"enduml"|"endcode")/[^a-z_A-Z0-9\-] { // end of verbatim block
+<CopyArgVerbatim>{CMD}("endverbatim"|"endiliteral"|"endlatexonly"|"endhtmlonly"|"endxmlonly"|"enddocbookonly"|"endmanonly"|"endrtfonly"|"enddot"|"endmsc"|"enduml"|"endcode")/[^a-z_A-Z0-9\-] { // end of verbatim block
                                           yyextra->fullArgString+=yytext;
                                           if (&yytext[4]==yyextra->docBlockName)
                                           {
@@ -5065,7 +5082,7 @@ NONLopt [^\n]*
                                             BEGIN(CopyArgCommentLine);
                                           }
                                         }
-<CopyArgVerbatim>[\\@]("f$"|"f]"|"f}"|"f)") { // end of verbatim block
+<CopyArgVerbatim>{CMD}("f$"|"f]"|"f}"|"f)") { // end of verbatim block
                                           yyextra->fullArgString+=yytext;
                                           if (yyextra->docBlockName==&yytext[1])
                                           {
@@ -5181,7 +5198,7 @@ NONLopt [^\n]*
                                           if (yyextra->insidePHP)
                                           {
                                             yyextra->lastCopyArgStringContext=YY_START;
-                                            BEGIN(CopyArgPHPString);
+                                            BEGIN(SkipPHPString);
                                           }
                                         }
 <ReadFuncArgType,ReadTempArgs,CopyArgString,CopyArgPHPString,CopyArgRound,CopyArgSquare,CopyArgSharp>"<="|">="|"<=>" {
@@ -5389,6 +5406,7 @@ NONLopt [^\n]*
                                           {
                                             // typically an initialized function pointer
                                             yyextra->lastInitializerContext=YY_START;
+                                            yyextra->sharpCount=0;
                                             yyextra->initBracketCount=0;
                                             yyextra->current->initializer.str(yytext);
                                             BEGIN(ReadInitializer);
@@ -5812,7 +5830,7 @@ NONLopt [^\n]*
                                           *yyextra->pCopyRawString += yytext;
                                           BEGIN(RawString);
                                         }
-<SkipCurly,SkipCurlyCpp>[^\n#"'@\\/{}<\$]+ {
+<SkipCurly,SkipCurlyCpp>[^\n#"R'@\\/{}<\$]+ {
                                           lineCount(yyscanner);  // for yyextra->column updates
                                           //addToBody(yytext);
                                         }
@@ -5963,6 +5981,7 @@ NONLopt [^\n]*
 <CompoundName>{SCOPENAME}/{BN}*"<"      {
                                           yyextra->sharpCount = 0;
                                           yyextra->current->name = yytext ;
+                                          storeClangId(yyscanner,yytext);
                                           if (yyextra->current->spec.isProtocol())
                                           {
                                             yyextra->current->name+="-p";
@@ -6043,6 +6062,7 @@ NONLopt [^\n]*
                                             // a purpose of its own
                                             yyextra->current->name = yytext;
                                             yyextra->current->name=yyextra->current->name.left(yyextra->current->name.length()-1).stripWhiteSpace();
+                                            storeClangId(yyscanner,yyextra->current->name.data());
                                             //printf("template class declaration for %s!\n",qPrint(yyextra->current->name));
                                             QCString rn = yyextra->current_root->name;
                                             //printf("cn='%s' rn='%s' yyextra->isTypedef=%d\n",qPrint(cn),qPrint(rn),yyextra->isTypedef);
@@ -6096,6 +6116,7 @@ NONLopt [^\n]*
                                         }
 <CompoundName>{SCOPENAME}/{BN}*"("      {
                                           yyextra->current->name = yytext ;
+                                          storeClangId(yyscanner,yytext);
                                           lineCount(yyscanner);
                                           if (yyextra->insideCpp && yyextra->current->name=="alignas") // C++11
                                           {
@@ -6126,12 +6147,14 @@ NONLopt [^\n]*
 <AlignAsEnd>.
 <ConceptName>{ID}                       {
                                           yyextra->current->name = yytext ;
+                                          storeClangId(yyscanner,yytext);
                                         }
 <ConceptName>"="                        {
                                           yyextra->current->bodyLine = yyextra->yyLineNr;
                                           yyextra->current->bodyColumn = yyextra->yyColNr;
                                           yyextra->current->initializer.str(std::string());
                                           yyextra->lastInitializerContext = FindMembers;
+                                          yyextra->sharpCount=0;
                                           yyextra->initBracketCount=0;
                                           BEGIN(ReadInitializer);
                                         }
@@ -6173,6 +6196,7 @@ NONLopt [^\n]*
                                             yyextra->yyBegLineNr=yyextra->yyLineNr;
                                             yyextra->current->name = yytext;
                                             yyextra->current->name = yyextra->current->name.stripWhiteSpace();
+                                            storeClangId(yyscanner,yyextra->current->name.data());
                                             lineCount(yyscanner);
                                             BEGIN( FindMembers );
                                           }
@@ -6991,6 +7015,7 @@ NONLopt [^\n]*
                                               yyextra->current->bodyColumn = yyextra->yyColNr;
                                               yyextra->current->initializer.str(yytext);
                                               yyextra->lastInitializerContext = YY_START;
+                                              yyextra->sharpCount=0;
                                               yyextra->initBracketCount=1;
                                               BEGIN(ReadInitializer);
                                             }
@@ -7201,22 +7226,27 @@ NONLopt [^\n]*
                                           startVerbatimBlock(yyscanner,"uml");
                                           BEGIN(DocCopyBlock);
                                         }
-<DocBlock>{CMD}("verbatim"|"iliteral"|"latexonly"|"htmlonly"|"xmlonly"|"manonly"|"rtfonly"|"docbookonly"|"dot"|"msc"|"code")/[^a-z_A-Z0-9\-]     { // verbatim command (which could contain nested comments!)
+<DocBlock>{CMD}("verbatim"|"iliteral"|"latexonly"|"htmlonly"|"xmlonly"|"manonly"|"rtfonly"|"docbookonly"|"dot"|"msc")/[^a-z_A-Z0-9\-]     { // verbatim command (which could contain nested comments!)
                                           yyextra->docBlock << yytext;
                                           startVerbatimBlock(yyscanner,&yytext[1]);
+                                          BEGIN(DocCopyBlock);
+                                        }
+<DocBlock>{CMD}("code")/[^a-z_A-Z0-9\-] { // verbatim command (which could contain nested comments!)
+                                          yyextra->docBlock << yytext;
+                                          startVerbatimBlock(yyscanner,&yytext[1],0,true);
                                           BEGIN(DocCopyBlock);
                                         }
 <DocBlock>"\\ilinebr "({B}*"*"+)?{B}{0,3}"~~~"[~]* {
                                           QCString pat = substitute(yytext+9,"*"," "); // skip over "\ilinebr " part
                                           yyextra->docBlock << "\\ilinebr ";
                                           yyextra->docBlock << pat;
-                                          startVerbatimBlock(yyscanner,"~~~",pat.stripWhiteSpace().length());
+                                          startVerbatimBlock(yyscanner,"~~~",pat.stripWhiteSpace().length(),true);
                                           BEGIN(DocCopyBlock);
                                         }
 <DocBlock>^({B}*"*"+)?{B}{0,3}"~~~"[~]* {
                                           QCString pat = substitute(yytext,"*"," ");
                                           yyextra->docBlock << pat;
-                                          startVerbatimBlock(yyscanner,"~~~",pat.stripWhiteSpace().length());
+                                          startVerbatimBlock(yyscanner,"~~~",pat.stripWhiteSpace().length(),true);
                                           BEGIN(DocCopyBlock);
                                         }
 <DocBlock>"\\ilinebr "({B}*"*"+)?{B}{0,3}"```"[`]*/(".")?[a-zA-Z0-9#_-]+ |
@@ -7225,7 +7255,7 @@ NONLopt [^\n]*
                                           QCString pat = substitute(yytext+9,"*"," "); // skip over "\ilinebr " part
                                           yyextra->docBlock << "\\ilinebr ";
                                           yyextra->docBlock << pat;
-                                          startVerbatimBlock(yyscanner,"```",pat.stripWhiteSpace().length());
+                                          startVerbatimBlock(yyscanner,"```",pat.stripWhiteSpace().length(),true);
                                           BEGIN(DocCopyBlock);
                                         }
 <DocBlock>^({B}*"*"+)?{B}{0,3}"```"[`]*/(".")?[a-zA-Z0-9#_-]+ |
@@ -7233,14 +7263,25 @@ NONLopt [^\n]*
 <DocBlock>^({B}*"*"+)?{B}{0,3}"```"[`]* {
                                           QCString pat = substitute(yytext,"*"," ");
                                           yyextra->docBlock << pat;
-                                          startVerbatimBlock(yyscanner,"```",pat.stripWhiteSpace().length());
+                                          startVerbatimBlock(yyscanner,"```",pat.stripWhiteSpace().length(),true);
+                                          BEGIN(DocCopyBlock);
+                                        }
+<DocBlock>"```"                         { // skip ``` if not at the start of a line
+                                          yyextra->docBlock << "```";
+                                        }
+<DocBlock>"\\`"                         { // skip escaped backtick
+                                          yyextra->docBlock << yytext;
+                                        }
+<DocBlock>"`"{1,2}                      {
+                                          yyextra->docBlock << yytext;
+                                          startVerbatimBlock(yyscanner,yytext,yyleng,true);
                                           BEGIN(DocCopyBlock);
                                         }
 <DocBlock>{B}*"<"{CODE}">"              {
                                           if (yyextra->insideCS)
                                           {
                                             yyextra->docBlock << yytext;
-                                            startVerbatimBlock(yyscanner,"<code>");
+                                            startVerbatimBlock(yyscanner,"<code>",0,true);
                                             BEGIN(DocCopyBlock);
                                           }
                                           else
@@ -7248,7 +7289,7 @@ NONLopt [^\n]*
                                             REJECT;
                                           }
                                         }
-<DocBlock>[^@*~\/\\\n]+                 { // any character that isn't special
+<DocBlock>[^@*~`'\/\\\n]+               { // any character that isn't special
                                           yyextra->docBlock << yytext;
                                         }
 <DocBlock>\n                            { // newline
@@ -7361,7 +7402,41 @@ NONLopt [^\n]*
                                           }
                                           yyextra->docBlock << pat;
                                         }
-<DocCopyBlock>[^\<@/\*\]~"\$\\\n]+      { // any character that is not special
+<DocCopyBlock>"```"                     { // backtick + end marker
+                                          if (yyextra->docBlockName=="``") 
+                                          {
+                                            yyextra->docBlock << "`";
+                                            endVerbatimBlock(yyscanner,"``",2);
+                                            yyextra->docBlock << "``";
+                                            BEGIN(DocBlock);
+                                          }
+                                          else
+                                          {
+                                            yyextra->docBlock << yytext;
+                                          }
+                                        }
+<DocCopyBlock>"''"/[^a-z_A-Z0-9-]       {
+                                          if (!Config_getBool(MARKDOWN_STRICT) && endVerbatimBlock(yyscanner,"``",2))
+                                          {
+                                            BEGIN(DocBlock);
+                                          }
+                                          yyextra->docBlock << yytext;
+                                        }
+<DocCopyBlock>"'"/[^'a-z_A-Z0-9-]       {
+                                          if (!Config_getBool(MARKDOWN_STRICT) && endVerbatimBlock(yyscanner,"`",1))
+                                          {
+                                            BEGIN(DocBlock);
+                                          }
+                                          yyextra->docBlock << yytext;
+                                        }
+<DocCopyBlock>"`"{1,2}                  {
+                                          if (endVerbatimBlock(yyscanner,yytext,yyleng))
+                                          {
+                                            BEGIN(DocBlock);
+                                          }
+                                          yyextra->docBlock << yytext;
+                                        }
+<DocCopyBlock>[^\<@/\*\]`'~"\$\\\n]+    { // any character that is not special
                                           yyextra->docBlock << yytext;
                                         }
 <DocCopyBlock>\"                        {
@@ -7377,13 +7452,21 @@ NONLopt [^\n]*
                                           }
                                         }
 <DocCopyBlock>{CCS}|{CCE}|{CPPC}        {
-                                          if (yytext[1]=='*')
+                                          if (yytext[1]=='*') // start comment
                                           {
                                             yyextra->nestedComment++;
                                           }
-                                          else if (yytext[0]=='*' && yyextra->nestedComment>0)
+                                          else if (yytext[0]=='*' && yyextra->nestedComment>0) // end comment
                                           {
                                             yyextra->nestedComment--;
+                                          }
+                                          else if (yytext[0]=='*' && yyextra->nestedComment==0 && yyextra->isCodeBlock) // end comment without start
+                                          {
+                                            warn(yyextra->fileName,yyextra->yyLineNr,
+                                                "Found end of C comment inside a '{}' block without matching start of the comment!"
+                                                " Maybe the end marker for the block is missing?",
+                                                yyextra->docBlockName);
+                                            BEGIN(DocBlock);
                                           }
                                           yyextra->docBlock << yytext;
                                         }
@@ -7758,20 +7841,6 @@ static inline int computeIndent(const char *s,int startIndent)
   return col;
 }
 
-static QCString extractBeginRawStringDelimiter(const char *rawStart)
-{
-  QCString text=rawStart;
-  int i = text.find('"');
-  assert(i!=-1);
-  return text.mid(i+1,text.length()-i-2); // text=...R"xyz( -> delimiter=xyz
-}
-
-static QCString extractEndRawStringDelimiter(const char *rawEnd)
-{
-  QCString text=rawEnd;
-  return text.mid(1,text.length()-2); // text=)xyz" -> delimiter=xyz
-}
-
 static inline void initMethodProtection(yyscan_t yyscanner,Protection prot)
 {
   struct yyguts_t *yyg = (struct yyguts_t*)yyscanner;
@@ -7830,7 +7899,7 @@ static QCString stripFuncPtr(const QCString &type)
 }
 
 //-----------------------------------------------------------------
-static void startVerbatimBlock(yyscan_t yyscanner,const QCString &blockName,size_t fencedSize)
+static void startVerbatimBlock(yyscan_t yyscanner,const QCString &blockName,size_t fencedSize,bool codeBlock)
 {
   struct yyguts_t *yyg = (struct yyguts_t*)yyscanner;
   if (Config_getBool(MARKDOWN_SUPPORT))
@@ -7839,6 +7908,7 @@ static void startVerbatimBlock(yyscan_t yyscanner,const QCString &blockName,size
   }
   yyextra->docBlockName=blockName;
   yyextra->fencedSize=fencedSize;
+  yyextra->isCodeBlock=codeBlock;
   yyextra->nestedComment=0;
 }
 

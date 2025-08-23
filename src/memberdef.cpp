@@ -354,6 +354,8 @@ class MemberDefImpl : public DefinitionMixin<MemberDefMutable>
     StringVector getQualifiers() const override;
     ClassDefMutable *getClassDefMutable() override;
     void setModuleDef(ModuleDef *mod) override;
+    int redefineCount() const override;
+    void setRedefineCount(int) override;
 
   private:
     void _computeLinkableInProject();
@@ -511,6 +513,7 @@ class MemberDefImpl : public DefinitionMixin<MemberDefMutable>
     int m_declLine = -1;
     int m_declColumn = -1;
     int m_numberOfFlowKW = 0;
+    int m_redefineCount = 0;
 };
 
 std::unique_ptr<MemberDef> createMemberDef(const QCString &defFileName,int defLine,int defColumn,
@@ -932,6 +935,8 @@ class MemberDefAliasImpl : public DefinitionAliasMixin<MemberDef>
     { return getMdAlias()->requiresClause(); }
     bool visibleInIndex() const override
     { return getMdAlias()->visibleInIndex(); }
+    int redefineCount() const override
+    { return getMdAlias()->redefineCount(); }
 
     void warnIfUndocumented() const override {}
     void warnIfUndocumentedParams() const override {}
@@ -1290,7 +1295,7 @@ static void writeExceptionListImpl(
 
 static void writeExceptionList(OutputList &ol, const ClassDef *cd, const MemberDef *md)
 {
-  QCString exception(QCString(md->excpString()).stripWhiteSpace());
+  QCString exception = md->excpString().stripWhiteSpace();
   if ('{'==exception.at(0))
   {
     // this is an UNO IDL attribute - need special handling
@@ -2256,7 +2261,7 @@ void MemberDefImpl::writeDeclaration(OutputList &ol,
   OutputGenerator::MemberItemType anonType = isAnonType ? OutputGenerator::MemberItemType::AnonymousStart :
                               !m_tArgList.empty() ? OutputGenerator::MemberItemType::Templated      :
                                                           OutputGenerator::MemberItemType::Normal;
-  ol.startMemberItem(anchor(), anonType, inheritId);
+  ol.startMemberItem(annoClassDef ? QCString() : anchor(), anonType, inheritId);
 
 
   // If there is no detailed description we need to write the anchor here.
@@ -2561,7 +2566,7 @@ void MemberDefImpl::writeDeclaration(OutputList &ol,
            ol.docify(", ");
          }
          first=false;
-         ol.docify(s.c_str());
+         ol.docify(s);
       }
       ol.docify("]");
       ol.endTypewriter();
@@ -2584,7 +2589,7 @@ void MemberDefImpl::writeDeclaration(OutputList &ol,
           ol.docify(", ");
         }
         first=false;
-        ol.docify(s.c_str());
+        ol.docify(s);
       }
       ol.docify("]");
       ol.endTypewriter();
@@ -2613,7 +2618,7 @@ void MemberDefImpl::writeDeclaration(OutputList &ol,
                                      briefFile(),briefLine(),
                                      getOuterScope()?getOuterScope():d,
                                      this,briefDescription(),TRUE,FALSE,
-                                     QCString(),TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT)) };
+                                     QCString(),TRUE,FALSE) };
     if (!ast->isEmpty())
     {
       ol.startMemberDescription(anchor(),inheritId);
@@ -2694,7 +2699,9 @@ bool MemberDefImpl::hasDetailedDescription() const
             m_defArgList.hasDocumentation()) ||
            (m_templateMaster ?
             m_templateMaster->templateArguments().hasTemplateDocumentation() :
-            m_tArgList.hasTemplateDocumentation());
+            m_tArgList.hasTemplateDocumentation()) ||
+           // user-specified qualifiers
+           !m_qualifiers.empty();
 
     // generate function                  guard
     // ==================                 =======
@@ -3262,14 +3269,14 @@ void MemberDefImpl::_writeEnumValues(OutputList &ol,const Definition *container,
           ol.generateDoc(fmd->briefFile(),fmd->briefLine(),
               getOuterScope()?getOuterScope():container,
               fmd,fmd->briefDescription(),TRUE,FALSE,
-              QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+              QCString(),FALSE,FALSE);
         }
         if (hasDetails)
         {
           ol.generateDoc(fmd->docFile(),fmd->docLine(),
               getOuterScope()?getOuterScope():container,
               fmd,fmd->documentation()+"\n",TRUE,FALSE,
-              QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+              QCString(),FALSE,FALSE);
         }
         ol.endDescTableData();
         ol.endDescTableRow();
@@ -3367,8 +3374,12 @@ void MemberDefImpl::_writeGroupInclude(OutputList &ol,bool inGroup) const
   bool showGroupedMembInc = Config_getBool(SHOW_GROUPED_MEMB_INC);
   const FileDef *fd = getFileDef();
   QCString nm;
-  if (fd) nm = getFileDef()->docName();
-  if (inGroup && fd && showGroupedMembInc && !nm.isEmpty())
+  if (inGroup && fd && showGroupedMembInc)
+  {
+    nm = fd->absFilePath();
+    nm = stripFromIncludePath(nm);
+  }
+  if (!nm.isEmpty())
   {
     ol.startParagraph();
     ol.startTypewriter();
@@ -3533,6 +3544,7 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
   ldef.stripPrefix("constexpr ");
   ldef.stripPrefix("consteval ");
   ldef.stripPrefix("constinit ");
+  ldef.stripPrefix("static ");
 
   //----------------------------------------
 
@@ -3555,11 +3567,11 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
         ol.startDoxyAnchor(cfname, cname, memAnchor, doxyName, doxyArgs);
         ol.startMemberDoc(ciname,name(),memAnchor,name(),memCount,memTotal,showInline);
         ol.addLabel(cfname, memAnchor);
-        std::string prefix = match.prefix().str();
-        std::string suffix = match.suffix().str();
-        linkifyText(TextGeneratorOLImpl(ol),scopedContainer,getBodyDef(),this,prefix.c_str());
+        QCString prefix = match.prefix().str();
+        QCString suffix = match.suffix().str();
+        linkifyText(TextGeneratorOLImpl(ol),scopedContainer,getBodyDef(),this,prefix);
         vmd->writeEnumDeclaration(ol,getClassDef(),getNamespaceDef(),getFileDef(),getGroupDef(),getModuleDef());
-        linkifyText(TextGeneratorOLImpl(ol),scopedContainer,getBodyDef(),this,suffix.c_str());
+        linkifyText(TextGeneratorOLImpl(ol),scopedContainer,getBodyDef(),this,suffix);
 
         found=true;
         break;
@@ -3578,11 +3590,11 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
       ol.startMemberDocName(isObjCMethod());
       if (reg::search(sdef,match,reAnonymous))
       {
-        std::string prefix = match.prefix().str();
-        std::string suffix = match.suffix().str();
-        ol.docify(prefix.c_str());
+        QCString prefix = match.prefix().str();
+        QCString suffix = match.suffix().str();
+        ol.docify(prefix);
         ol.docify(" { ... } ");
-        linkifyText(TextGeneratorOLImpl(ol),scopedContainer,getBodyDef(),this,removeAnonymousScopes(suffix.c_str()));
+        linkifyText(TextGeneratorOLImpl(ol),scopedContainer,getBodyDef(),this,removeAnonymousScopes(suffix));
       }
       else
       {
@@ -3760,7 +3772,7 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
     for (const auto &s : sl)
     {
       count++;
-      ol.writeLabel(s.c_str(),count==sl.size());
+      ol.writeLabel(s,count==sl.size());
     }
     ol.endLabels();
   }
@@ -3790,7 +3802,7 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
     for (const auto &s : sl)
     {
       count++;
-      ol.writeLabel(s.c_str(),count==sl.size());
+      ol.writeLabel(s,count==sl.size());
     }
     ol.endLabels();
     ol.writeString("  </td>\n");
@@ -3821,7 +3833,7 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
     ol.generateDoc(briefFile(),briefLine(),
                 scopedContainer,this,
                 brief,FALSE,FALSE,
-                QCString(),TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                QCString(),TRUE,FALSE);
     ol.endParagraph();
   }
 
@@ -3839,7 +3851,7 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
     else
     {
       ol.generateDoc(docFile(),docLine(),scopedContainer,this,detailed+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                     QCString(),FALSE,FALSE);
     }
 
     if (!inbodyDocumentation().isEmpty())
@@ -3847,7 +3859,7 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
       ol.generateDoc(inbodyFile(),inbodyLine(),
                      scopedContainer,this,
                      inbodyDocumentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                     QCString(),FALSE,FALSE);
     }
   }
   else if (!brief.isEmpty() && (Config_getBool(REPEAT_BRIEF) || !Config_getBool(BRIEF_MEMBER_DESC)))
@@ -3855,7 +3867,7 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
     if (!inbodyDocumentation().isEmpty())
     {
       ol.generateDoc(inbodyFile(),inbodyLine(),scopedContainer,this,inbodyDocumentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                     QCString(),FALSE,FALSE);
     }
   }
 
@@ -3873,7 +3885,7 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
         inlineArgListToDoc(docArgList),    // docStr
         TRUE,         // indexWords
         FALSE,        // isExample
-        QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT)
+        QCString(),FALSE,FALSE
         );
 
   const ArgumentList &docTemplateArgList = m_templateMaster ?
@@ -3886,7 +3898,7 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
         inlineTemplateArgListToDoc(docTemplateArgList),    // docStr
         TRUE,         // indexWords
         FALSE,        // isExample
-        QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT)
+        QCString(),FALSE,FALSE
         );
 
   _writeEnumValues(ol,scopedContainer,cfname,ciname,cname);
@@ -3926,8 +3938,8 @@ static QCString simplifyTypeForTable(const QCString &s)
   {
     t = match.prefix().str() + match.suffix().str(); // remove the matched part
   }
-  //printf("simplifyTypeForTable(%s)->%s\n",qPrint(s),t.c_str());
-  return QCString(t);
+  //printf("simplifyTypeForTable(%s)->%s\n",qPrint(s),qPrint(t));
+  return t;
 }
 
 QCString MemberDefImpl::fieldType() const
@@ -4032,7 +4044,7 @@ void MemberDefImpl::writeMemberDocSimple(OutputList &ol, const Definition *conta
     ol.generateDoc(briefFile(),briefLine(),
                 getOuterScope()?getOuterScope():container,this,
                 brief,FALSE,FALSE,
-                QCString(),TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                QCString(),TRUE,FALSE);
   }
 
   /* write detailed description */
@@ -4047,7 +4059,7 @@ void MemberDefImpl::writeMemberDocSimple(OutputList &ol, const Definition *conta
     ol.generateDoc(docFile(),docLine(),
                 getOuterScope()?getOuterScope():container,this,
                 detailed+"\n",FALSE,FALSE,
-                QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                QCString(),FALSE,FALSE);
 
   }
 
@@ -4178,6 +4190,7 @@ static std::mutex g_detectUndocumentedParamsMutex;
 
 void MemberDefImpl::detectUndocumentedParams(bool hasParamCommand,bool hasReturnCommand) const
 {
+  //printf("%s:detectUndocumentedParams(%d,%d)\n",qPrint(name()),hasParamCommand,hasReturnCommand);
   bool isPython = getLanguage()==SrcLangExt::Python;
 
   // this function is called while parsing the documentation. A member can have multiple
@@ -4201,29 +4214,29 @@ void MemberDefImpl::detectUndocumentedParams(bool hasParamCommand,bool hasReturn
       // see if all parameters have documentation
       for (auto it = al.begin(); it!=al.end() && allDoc; ++it)
       {
-        Argument a = *it;
-        if (!a.name.isEmpty() && a.type!="void" &&
+        const Argument &a = *it;
+        if (!a.name.isEmpty() && a.type!="void" && a.name!="..." &&
             !(isPython && (a.name=="self" || a.name=="cls"))
            )
         {
           allDoc = !a.docs.isEmpty();
         }
-        //printf("a->type=%s a->name=%s doc=%s\n",
-        //        qPrint(a->type),qPrint(a->name),qPrint(a->docs));
+        //printf("a.type=%s a.name=%s doc=%s\n",
+        //        qPrint(a.type),qPrint(a.name),qPrint(a.docs));
       }
       if (!allDoc && declAl.empty()) // try declaration arguments as well
       {
         allDoc=true;
         for (auto it = al.begin(); it!=al.end() && allDoc; ++it)
         {
-          Argument a = *it;
-          if (!a.name.isEmpty() && a.type!="void" &&
+          const Argument &a = *it;
+          if (!a.name.isEmpty() && a.type!="void" && a.name!="..." &&
               !(isPython && (a.name=="self" || a.name=="cls"))
              )
           {
             allDoc = !a.docs.isEmpty();
           }
-          //printf("a->name=%s doc=%s\n",qPrint(a->name),qPrint(a->docs));
+          //printf("a.name=%s doc=%s\n",qPrint(a.name),qPrint(a.docs));
         }
       }
     }
@@ -4360,6 +4373,13 @@ void MemberDefImpl::setAnchor()
   {
     memAnchor+=" "+m_requiresClause;
   }
+  if (m_redefineCount>0)
+  {
+    char buf[20];
+    qsnprintf(buf,20,":%d",m_redefineCount);
+    buf[19]='\0';
+    memAnchor.append(buf);
+  }
 
   // convert to md5 hash
   uint8_t md5_sig[16];
@@ -4491,9 +4511,6 @@ void MemberDefImpl::setInitializer(const QCString &initializer)
 void MemberDefImpl::addListReference(Definition *)
 {
   bool optimizeOutputForC = Config_getBool(OPTIMIZE_OUTPUT_FOR_C);
-  //bool hideScopeNames     = Config_getBool(HIDE_SCOPE_NAMES);
-  //bool optimizeOutputJava = Config_getBool(OPTIMIZE_OUTPUT_JAVA);
-  //bool fortranOpt = Config_getBool(OPTIMIZE_FOR_FORTRAN);
   SrcLangExt lang = getLanguage();
   if (!isLinkableInProject()) return;
   QCString memLabel;
@@ -4515,17 +4532,7 @@ void MemberDefImpl::addListReference(Definition *)
                     (toClassDef(pd))->displayName() : pd->name();
   QCString sep = getLanguageSpecificSeparator(lang,TRUE);
   QCString memArgs;
-  if (!isRelated()
-      /* && commented out as a result of bug 597016
-      (
-       (!hideScopeNames &&                    // there is a scope
-        pd && pd!=Doxygen::globalScope)       // and we can show it
-       ||
-       (pd=getClassDef())                     // it's a class so we
-                                              // show the scope anyway
-      )
-      */
-     )
+  if (!isRelated())
   {
     if (isObjCMethod())
     {
@@ -6385,6 +6392,16 @@ CodeSymbolType MemberDefImpl::codeSymbolType() const
   return CodeSymbolType::Default;
 }
 
+int MemberDefImpl::redefineCount() const
+{
+  return m_redefineCount;
+}
+
+void MemberDefImpl::setRedefineCount(int count)
+{
+  m_redefineCount=count;
+}
+
 //-------------------------------------------------------------------------------
 // Helpers
 
@@ -6491,4 +6508,5 @@ MemberDefMutable *toMemberDefMutable(Definition *d)
     return nullptr;
   }
 }
+
 

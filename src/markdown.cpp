@@ -67,7 +67,7 @@ enum class ExplicitPageResult
 {
   explicitPage,      /**< docs start with a page command */
   explicitMainPage,  /**< docs start with a mainpage command */
-  explicitDirPage,   /**< docs start with a dir command */
+  explicitOtherPage, /**< docs start with a dir / defgroup / addtogroup command */
   notExplicit        /**< docs doesn't start with either page or mainpage */
 };
 
@@ -84,7 +84,7 @@ enum class ExplicitPageResult
 #define extraChar(c) \
   (c=='-' || c=='+' || c=='!' || \
    c=='?' || c=='$' || c=='@' || \
-   c=='&' || c=='*' || c=='%' || \
+   c=='&' || c=='*' || c=='_' || c=='%' || \
    c=='[' || c=='(' || c=='.' || \
    c=='>' || c==':' || c==',' || \
    c==';' || c=='\'' || c=='"' || c=='`')
@@ -204,7 +204,7 @@ const size_t codeBlockIndent = 4;
 
 // test if the next characters in data represent a new line (which can be character \n or string \ilinebr).
 // returns 0 if no newline is found, or the number of characters that make up the newline if found.
-inline size_t isNewline(std::string_view data)
+inline size_t isNewline(const std::string_view & data)
 {
   // normal newline
   if (data[0] == '\n') return 1;
@@ -248,7 +248,17 @@ static QCString escapeSpecialChars(const QCString &s)
     switch (c)
     {
       case '"':
-        if (pc!='\\')  { insideQuote=!insideQuote; }
+        if (pc!='\\')
+        {
+          if (Config_getBool(MARKDOWN_STRICT))
+          {
+            result+='\\';
+          }
+          else // For Doxygen's markup style a quoted text is left untouched
+          {
+            insideQuote=!insideQuote;
+          }
+        }
         result+=c;
         break;
       case '<':
@@ -1641,9 +1651,9 @@ int Markdown::Private::processLink(const std::string_view data,size_t offset)
 }
 
 /** `` ` `` parsing a code span (assuming codespan != 0) */
-int Markdown::Private::processCodeSpan(std::string_view data,size_t)
+int Markdown::Private::processCodeSpan(std::string_view data,size_t offset)
 {
-  AUTO_TRACE("data='{}'",Trace::trunc(data));
+  AUTO_TRACE("data='{}' offset={}",Trace::trunc(data),offset);
   const size_t size = data.size();
 
   /* counting the number of backticks in the delimiter */
@@ -1653,28 +1663,72 @@ int Markdown::Private::processCodeSpan(std::string_view data,size_t)
     nb++;
   }
 
-  /* finding the next delimiter */
+  /* finding the next delimiter with the same amount of backticks */
   size_t i = 0;
   char pc = '`';
-  for (end=nb; end<size && i<nb; end++)
+  bool markdownStrict = Config_getBool(MARKDOWN_STRICT);
+  for (end=nb; end<size; end++)
   {
+    //AUTO_TRACE_ADD("c={} nb={} i={} size={}",data[end],nb,i,size);
     if (data[end]=='`')
     {
       i++;
+      if (nb==1) // `...`
+      {
+        if (end+1<size && data[end+1]=='`') // skip over `` inside `...`
+        {
+          AUTO_TRACE_ADD("case1.1");
+          // skip
+          end++;
+          i=0;
+        }
+        else // normal end of `...`
+        {
+          AUTO_TRACE_ADD("case1.2");
+          break;
+        }
+      }
+      else if (i==nb) // ``...``
+      {
+        if (end+1<size && data[end+1]=='`') // do greedy match
+        {
+          // skip this quote and use the next one to terminate the sequence, e.g. ``X`Y```
+          i--;
+          AUTO_TRACE_ADD("case2.1");
+        }
+        else // normal end of ``...``
+        {
+          AUTO_TRACE_ADD("case2.2");
+          break;
+        }
+      }
     }
     else if (data[end]=='\n')
     {
       // consecutive newlines
-      if (pc == '\n') return 0;
+      if (pc == '\n')
+      {
+        AUTO_TRACE_EXIT("new paragraph");
+        return 0;
+      }
       pc = '\n';
       i = 0;
     }
-    else if (data[end]=='\'' && nb==1 && (end==size-1 || (end+1<size && !isIdChar(data[end+1]))))
+    else if (!markdownStrict && data[end]=='\'' && nb==1 && (end+1==size || (end+1<size && data[end+1]!='\'' && !isIdChar(data[end+1]))))
     { // look for quoted strings like 'some word', but skip strings like `it's cool`
       out+="&lsquo;";
       out+=data.substr(nb,end-nb);
       out+="&rsquo;";
+      AUTO_TRACE_EXIT("quoted end={}",end+1);
       return static_cast<int>(end+1);
+    }
+    else if (!markdownStrict && data[end]=='\'' && nb==2 && end+1<size && data[end+1]=='\'')
+    { // look for '' to match a ``
+      out+="&ldquo;";
+      out+=data.substr(nb,end-nb);
+      out+="&rdquo;";
+      AUTO_TRACE_EXIT("double quoted end={}",end+1);
+      return static_cast<int>(end+2);
     }
     else
     {
@@ -1684,32 +1738,30 @@ int Markdown::Private::processCodeSpan(std::string_view data,size_t)
   }
   if (i < nb && end >= size)
   {
+    AUTO_TRACE_EXIT("no matching delimiter nb={} i={}",nb,i);
+    if (nb>=3) // found ``` that is not at the start of the line, keep it as-is.
+    {
+      out+=data.substr(0,nb);
+      return nb;
+    }
     return 0;  // no matching delimiter
   }
-
-  // trimming outside whitespaces
-  size_t f_begin = nb;
-  while (f_begin < end && data[f_begin]==' ')
+  while (end<size && data[end]=='`') // do greedy match in case we have more end backticks.
   {
-    f_begin++;
-  }
-  size_t f_end = end - nb;
-  while (f_end > nb && data[f_end-1]==' ')
-  {
-    f_end--;
+    end++;
   }
 
   //printf("found code span '%s'\n",qPrint(QCString(data+f_begin).left(f_end-f_begin)));
 
   /* real code span */
-  if (f_begin < f_end)
+  if (nb+nb < end)
   {
-    QCString codeFragment = data.substr(f_begin, f_end-f_begin);
+    QCString codeFragment = data.substr(nb, end-nb-nb);
     out+="<tt>";
     out+=escapeSpecialChars(codeFragment);
     out+="</tt>";
   }
-  AUTO_TRACE_EXIT("result={}",end);
+  AUTO_TRACE_EXIT("result={} nb={}",end,nb);
   return static_cast<int>(end);
 }
 
@@ -2031,7 +2083,7 @@ QCString Markdown::Private::extractTitleId(QCString &title, int level, bool *pIs
     {
       warn(fileName, lineNr, "An automatically generated id already has the name '{}'!", id);
     }
-    //printf("found match id='%s' title=%s\n",id.c_str(),qPrint(title));
+    //printf("found match id='%s' title=%s\n",qPrint(id),qPrint(title));
     AUTO_TRACE_EXIT("id={}",id);
     return id;
   }
@@ -3008,7 +3060,7 @@ size_t Markdown::Private::findEndOfLine(std::string_view data,size_t offset)
   // find end of the line
   const size_t size = data.size();
   size_t nb=0, end=offset+1, j=0;
-  while (end<=size && (j=isNewline(data.data()+end-1))==0)
+  while (end<=size && (j=isNewline(data.substr(end-1)))==0)
   {
     // while looking for the end of the line we might encounter a block
     // that needs to be passed unprocessed.
@@ -3461,6 +3513,19 @@ QCString Markdown::Private::processBlocks(std::string_view data,const size_t ind
   return out;
 }
 
+static bool isOtherPage(std::string_view data)
+{
+#define OPC(x) if (literal_at(data,#x " ") || literal_at(data,#x "\n")) return true
+  OPC(dir);       OPC(defgroup);  OPC(addtogroup); OPC(weakgroup); OPC(ingroup);
+  OPC(fn);        OPC(property);  OPC(typedef);    OPC(var);       OPC(def);
+  OPC(enum);      OPC(namespace); OPC(class);      OPC(concept);   OPC(module);
+  OPC(protocol);  OPC(category);  OPC(union);      OPC(struct);    OPC(interface);
+  OPC(idlexcept); OPC(file);
+#undef OPC
+
+  return false;
+}
+
 static ExplicitPageResult isExplicitPage(const QCString &docs)
 {
   AUTO_TRACE("docs={}",Trace::trunc(docs));
@@ -3497,13 +3562,10 @@ static ExplicitPageResult isExplicitPage(const QCString &docs)
         return ExplicitPageResult::explicitMainPage;
       }
     }
-    else if (i+1<size &&
-             (data[i]=='\\' || data[i]=='@') &&
-             (literal_at(data.substr(i+1),"dir\n") || literal_at(data.substr(i+1),"dir "))
-            )
+    else if (i+1<size && (data[i]=='\\' || data[i]=='@') && isOtherPage(data.substr(i+1)))
     {
-      AUTO_TRACE_EXIT("result=ExplicitPageResult::explicitDirPage");
-      return ExplicitPageResult::explicitDirPage;
+      AUTO_TRACE_EXIT("result=ExplicitPageResult::explicitOtherPage");
+      return ExplicitPageResult::explicitOtherPage;
     }
   }
   AUTO_TRACE_EXIT("result=ExplicitPageResult::notExplicit");
@@ -3617,8 +3679,8 @@ QCString Markdown::process(const QCString &input, int &startNewlines, bool fromP
 QCString markdownFileNameToId(const QCString &fileName)
 {
   AUTO_TRACE("fileName={}",fileName);
-  std::string absFileName = FileInfo(fileName.str()).absFilePath();
-  QCString baseFn  = stripFromPath(absFileName.c_str());
+  QCString absFileName = FileInfo(fileName.str()).absFilePath();
+  QCString baseFn = stripFromPath(absFileName);
   int i = baseFn.findRev('.');
   if (i!=-1) baseFn = baseFn.left(i);
   QCString baseName = escapeCharsInString(baseFn,false,false);
@@ -3655,6 +3717,7 @@ void MarkdownOutlineParser::parseInput(const QCString &fileName,
   current->docFile  = fileName;
   current->docLine  = 1;
   QCString docs = stripIndentation(fileBuf);
+  if (!docs.stripWhiteSpace().size()) return;
   Debug::print(Debug::Markdown,0,"======== Markdown =========\n---- input ------- \n{}\n",fileBuf);
   QCString id;
   Markdown markdown(fileName,1,0);
@@ -3747,7 +3810,7 @@ void MarkdownOutlineParser::parseInput(const QCString &fileName,
       break;
     case ExplicitPageResult::explicitMainPage:
       break;
-    case ExplicitPageResult::explicitDirPage:
+    case ExplicitPageResult::explicitOtherPage:
       break;
   }
   int lineNr=1;

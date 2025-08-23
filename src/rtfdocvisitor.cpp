@@ -37,6 +37,7 @@
 #include "fileinfo.h"
 #include "portable.h"
 #include "codefragment.h"
+#include "cite.h"
 
 //#define DBG_RTF(x) m_t << x
 #define DBG_RTF(x) do {} while(0)
@@ -275,6 +276,7 @@ void RTFDocVisitor::operator()(const DocStyleChange &s)
       if (s.enable()) m_t << "{\\i ";     else m_t << "} ";
       break;
     case DocStyleChange::Kbd:
+    case DocStyleChange::Typewriter:
     case DocStyleChange::Code:
       if (s.enable()) m_t << "{\\f2 ";   else m_t << "} ";
       break;
@@ -424,13 +426,16 @@ void RTFDocVisitor::operator()(const DocVerbatim &s)
     case DocVerbatim::PlantUML:
       {
         QCString rtfOutput = Config_getString(RTF_OUTPUT);
-        QCString baseName = PlantumlManager::instance().writePlantUMLSource(
+        auto baseNameVector = PlantumlManager::instance().writePlantUMLSource(
                        rtfOutput,s.exampleFile(),s.text(),PlantumlManager::PUML_BITMAP,
                        s.engine(),s.srcFile(),s.srcLine(),true);
 
-        writePlantUMLFile(baseName, s.hasCaption());
-        visitChildren(s);
-        includePicturePostRTF(true, s.hasCaption());
+        for (const auto &baseName: baseNameVector)
+        {
+          writePlantUMLFile(baseName, s.hasCaption());
+          visitChildren(s);
+          includePicturePostRTF(true, s.hasCaption());
+        }
       }
       break;
   }
@@ -646,21 +651,21 @@ void RTFDocVisitor::operator()(const DocCite &cite)
 {
   if (m_hide) return;
   DBG_RTF("{\\comment RTFDocVisitor::operator()(const DocCite &)}\n");
+  auto opt = cite.option();
   if (!cite.file().isEmpty())
   {
-    startLink(cite.ref(),cite.file(),cite.anchor());
+    if (!opt.noCite()) startLink(cite.ref(),cite.file(),cite.anchor());
+
+    filter(cite.getText());
+
+    if (!opt.noCite()) endLink(cite.ref());
   }
   else
   {
-    m_t << "{\\b ";
-  }
-  filter(cite.text());
-  if (!cite.file().isEmpty())
-  {
-    endLink(cite.ref());
-  }
-  else
-  {
+    m_t << "{\\b";
+    if (!opt.noPar()) filter("[");
+    filter(cite.target());
+    if (!opt.noPar()) filter("]");
     m_t << "}";
   }
 }
@@ -1318,12 +1323,15 @@ void RTFDocVisitor::operator()(const DocPlantUmlFile &df)
   QCString rtfOutput = Config_getString(RTF_OUTPUT);
   std::string inBuf;
   readInputFile(df.file(),inBuf);
-  QCString baseName = PlantumlManager::instance().writePlantUMLSource(
-                       rtfOutput,QCString(),inBuf.c_str(),PlantumlManager::PUML_BITMAP,
+  auto baseNameVector = PlantumlManager::instance().writePlantUMLSource(
+                       rtfOutput,QCString(),inBuf,PlantumlManager::PUML_BITMAP,
                        QCString(),df.srcFile(),df.srcLine(),false);
-  writePlantUMLFile(baseName, df.hasCaption());
-  visitChildren(df);
-  includePicturePostRTF(true, df.hasCaption());
+  for(const auto &baseName: baseNameVector)
+  {
+    writePlantUMLFile(baseName, df.hasCaption());
+    visitChildren(df);
+    includePicturePostRTF(true, df.hasCaption());
+  }
 }
 
 void RTFDocVisitor::operator()(const DocLink &lnk)

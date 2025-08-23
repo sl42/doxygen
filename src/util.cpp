@@ -53,6 +53,7 @@
 #include "doxygen.h"
 #include "textdocvisitor.h"
 #include "latexdocvisitor.h"
+#include "htmldocvisitor.h"
 #include "portable.h"
 #include "parserintf.h"
 #include "image.h"
@@ -128,7 +129,7 @@ void TextGeneratorOLImpl::writeString(std::string_view s,bool keepSpaces) const
   }
   else
   {
-    m_ol.docify(QCString(s));
+    m_ol.docify(s);
   }
 }
 
@@ -146,7 +147,7 @@ void TextGeneratorOLImpl::writeLink(const QCString &extRef,const QCString &file,
                                    ) const
 {
   //printf("TextGeneratorOlImpl::writeLink('%s')\n",text);
-  m_ol.writeObjectLink(extRef,file,anchor,QCString(text));
+  m_ol.writeObjectLink(extRef,file,anchor,text);
 }
 
 //------------------------------------------------------------------------
@@ -172,7 +173,7 @@ const int maxInheritanceDepth = 100000;
 QCString removeAnonymousScopes(const QCString &str)
 {
   std::string result;
-  if (str.isEmpty()) return QCString(result);
+  if (str.isEmpty()) return result;
 
   // helper to check if the found delimiter starts with a colon
   auto startsWithColon = [](const std::string &del)
@@ -233,7 +234,7 @@ QCString replaceAnonymousScopes(const QCString &s,const QCString &replacement)
   std::string result = reg::replace(s.str(),marker,
                                     !replacement.isEmpty() ? replacement.data() : "__anonymous__");
   //printf("replaceAnonymousScopes('%s')='%s'\n",qPrint(s),qPrint(result));
-  return QCString(result);
+  return result;
 }
 
 
@@ -314,7 +315,7 @@ static QCString stripFromPath(const QCString &p,const StringVector &l)
   size_t length = 0;
   for (const auto &s : l)
   {
-    QCString prefix = s.c_str();
+    QCString prefix = s;
     if (prefix.length() > length &&
         qstricmp(path.left(prefix.length()),prefix)==0) // case insensitive compare
     {
@@ -978,7 +979,7 @@ void linkifyText(const TextGeneratorIntf &out, const Definition *scope,
     }
     // get word from string
     std::string_view word=txtStr.substr(newIndex,matchLen);
-    QCString matchWord = substitute(substitute(QCString(word),"\\","::"),".","::");
+    QCString matchWord = substitute(substitute(word,"\\","::"),".","::");
     //printf("linkifyText word=%s matchWord=%s scope=%s\n",
     //    qPrint(word),qPrint(matchWord),scope ? qPrint(scope->name()) : "<none>");
     bool found=FALSE;
@@ -1331,7 +1332,7 @@ static QCString getFilterFromList(const QCString &name,const StringVector &filte
   // compare the file name to the filter pattern list
   for (const auto &filterStr : filterList)
   {
-    QCString fs = filterStr.c_str();
+    QCString fs = filterStr;
     int i_equals=fs.find('=');
     if (i_equals!=-1)
     {
@@ -1450,7 +1451,7 @@ QCString fileToString(const QCString &name,bool filter,bool isSourceCode)
     {
       contents+=line+'\n';
     }
-    return QCString(contents);
+    return contents;
   }
   else // read from file
   {
@@ -1810,7 +1811,7 @@ static QCString extractCanonicalType(const Definition *d,const FileDef *fs,QCStr
         size_t tl = match.length();
         std::string matchStr = match.str();
         canType += ts.substr(tp,ti-tp);
-        canType += getCanonicalTypeForIdentifier(d,fs,matchStr.c_str(),lang,nullptr);
+        canType += getCanonicalTypeForIdentifier(d,fs,matchStr,lang,nullptr);
         tp=ti+tl;
       }
       canType+=ts.substr(tp);
@@ -2279,7 +2280,7 @@ GetDefResult getDefsNew(const GetDefInput &input)
   const Definition *scope = Doxygen::globalScope;
   SymbolResolver resolver;
   if (input.currentFile) resolver.setFileScope(input.currentFile);
-  if (!input.scopeName.isEmpty())
+  if (!input.scopeName.isEmpty() && !input.forceEmptyScope)
   {
     scope = resolver.resolveSymbol(scope,input.scopeName);
   }
@@ -2289,7 +2290,7 @@ GetDefResult getDefsNew(const GetDefInput &input)
   }
   //printf("@@  -> found scope scope=%s member=%s out=%s\n",qPrint(input.scopeName),qPrint(input.memberName),qPrint(scope?scope->name():""));
   //
-  const Definition *symbol = resolver.resolveSymbol(scope,input.memberName,input.args,input.checkCV,input.insideCode);
+  const Definition *symbol = resolver.resolveSymbol(scope,input.memberName,input.args,input.checkCV,input.insideCode,true);
   //printf("@@  -> found symbol in=%s out=%s\n",qPrint(input.memberName),qPrint(symbol?symbol->qualifiedName():QCString()));
   if (symbol && symbol->definitionType()==Definition::TypeMember)
   {
@@ -2972,7 +2973,8 @@ bool resolveRef(/* in */  const QCString &scName,
     bool checkScope
     )
 {
-  AUTO_TRACE("scope={} name={} inSeeBlock={}",scName,name,inSeeBlock);
+  AUTO_TRACE("scope={} name={} inSeeBlock={} lang={} lookForSpecialization={} currentFile={} checkScope={}",
+      scName,name,inSeeBlock,lang,lookForSpecialization,currentFile ? currentFile->name() : "", checkScope);
   //printf("resolveRef(scope=%s,name=%s,inSeeBlock=%d)\n",qPrint(scName),qPrint(name),inSeeBlock);
   QCString tsName = name;
   //bool memberScopeFirst = tsName.find('#')!=-1;
@@ -3003,7 +3005,7 @@ bool resolveRef(/* in */  const QCString &scName,
   bool explicitScope = fullName.startsWith("::") &&   // ::scope or #scope
                        (scopePos>2 ||                 // ::N::A
                         tsName.startsWith("::") ||    // ::foo in local scope
-                        scName==nullptr                     // #foo  in global scope
+                        scName==nullptr               // #foo  in global scope
                        );
   bool allowTypeOnly=false;
 
@@ -3298,6 +3300,13 @@ bool resolveLink(/* in */ const QCString &scName,
     AUTO_TRACE_EXIT("section");
     return TRUE;
   }
+  else if ((si=SectionManager::instance().find(linkRef)))
+  {
+    *resContext=si->definition();
+    resAnchor = si->label();
+    AUTO_TRACE_EXIT("section");
+    return TRUE;
+  }
   else if ((pd=Doxygen::exampleLinkedMap->find(linkRef))) // link to an example
   {
     *resContext=pd;
@@ -3466,7 +3475,9 @@ FileDef *findFileDef(const FileNameLinkedMap *fnMap,const QCString &n,bool &ambi
       {
         FileDef *fd = fd_p.get();
         QCString fdStripPath = stripFromIncludePath(fd->getPath());
-        if (path.isEmpty() || fdStripPath.right(pathStripped.length())==pathStripped)
+        if (path.isEmpty() ||
+            (!pathStripped.isEmpty() && fdStripPath.endsWith(pathStripped)) ||
+            (pathStripped.isEmpty() && fdStripPath.isEmpty()))
         {
           count++;
           lastMatch=fd;
@@ -3561,9 +3572,10 @@ QCString showFileDefMatches(const FileNameLinkedMap *fnMap,const QCString &n)
 
 //----------------------------------------------------------------------
 
-QCString substituteKeywords(const QCString &s,const KeywordSubstitutionList &keywords)
+QCString substituteKeywords(const QCString &file, const QCString &s,const KeywordSubstitutionList &keywords)
 {
   std::string substRes;
+  int line = 1;
   const char *p = s.data();
   if (p)
   {
@@ -3600,6 +3612,7 @@ QCString substituteKeywords(const QCString &s,const KeywordSubstitutionList &key
               else
               {
                 //printf("missing argument\n");
+                warn(file,line,"Missing argument for '{}'",kw.keyword);
                 p+=keyLen;
               }
             }
@@ -3610,6 +3623,12 @@ QCString substituteKeywords(const QCString &s,const KeywordSubstitutionList &key
               //printf("found '%s'->'%s'\n",kw.keyword,qPrint(getValue()));
               p+=keyLen;
             }
+            else
+            {
+              //printf("%s %d Expected arguments, none specified '%s'\n",qPrint(file), line, qPrint(kw.keyword));
+              warn(file,line,"Expected arguments for '{}' but none were specified",kw.keyword);
+              p+=keyLen;
+            }
             found = true;
             break;
           }
@@ -3617,6 +3636,7 @@ QCString substituteKeywords(const QCString &s,const KeywordSubstitutionList &key
       }
       if (!found) // copy
       {
+        if (c=='\n') line++;
         substRes+=c;
         p++;
       }
@@ -3704,17 +3724,13 @@ static QCString projectLogoSize()
   return sizeVal;
 }
 
-QCString substituteKeywords(const QCString &s,const QCString &title,
+QCString substituteKeywords(const QCString &file,const QCString &s,const QCString &title,
          const QCString &projName,const QCString &projNum,const QCString &projBrief)
 {
-  return substituteKeywords(s,
+  return substituteKeywords(file,s,
   {
     // keyword          value getter
     { "$title",           [&]() { return !title.isEmpty() ? title : projName;       } },
-    { "$datetime",        [&]() { return dateToString(DateTimeType::DateTime);      } },
-    { "$date",            [&]() { return dateToString(DateTimeType::Date);          } },
-    { "$time",            [&]() { return dateToString(DateTimeType::Time);          } },
-    { "$year",            [&]() { return yearToString();                            } },
     { "$doxygenversion",  [&]() { return getDoxygenVersion();                       } },
     { "$projectname",     [&]() { return projName;                                  } },
     { "$projectnumber",   [&]() { return projNum;                                   } },
@@ -4109,7 +4125,7 @@ QCString determineAbsoluteIncludeName(const QCString &curFile,const QCString &in
   FileInfo fi(curFile.str());
   if (fi.exists())
   {
-    QCString absName = QCString(fi.dirPath(TRUE))+"/"+incFileName;
+    QCString absName = fi.dirPath(TRUE)+"/"+incFileName;
     FileInfo fi2(absName.str());
     if (fi2.exists())
     {
@@ -4123,7 +4139,7 @@ QCString determineAbsoluteIncludeName(const QCString &curFile,const QCString &in
         FileInfo fi3(incPath);
         if (fi3.exists() && fi3.isDir())
         {
-          absName = QCString(fi3.absFilePath())+"/"+incFileName;
+          absName = fi3.absFilePath()+"/"+incFileName;
           //printf("trying absName=%s\n",qPrint(absName));
           FileInfo fi4(absName.str());
           if (fi4.exists())
@@ -4384,7 +4400,7 @@ QCString convertToId(const QCString &s)
   while ((c=*p++))
   {
     char encChar[4];
-    if ((c>='0' && c<='9') || (c>='a' && c<='z') || (c>='A' && c<='Z') || c=='-' || c==':' || c=='.')
+    if ((c>='0' && c<='9') || (c>='a' && c<='z') || (c>='A' && c<='Z') || c=='-')
     { // any permissive character except _
       if (first && c>='0' && c<='9') growBuf.addChar('a'); // don't start with a digit
       growBuf.addChar(c);
@@ -4525,7 +4541,7 @@ QCString convertToHtml(const QCString &s,bool keepEntities)
   return growBuf.get();
 }
 
-QCString convertToJSString(const QCString &s)
+QCString convertToJSString(const QCString &s,bool keepEntities,bool singleQuotes)
 {
   if (s.isEmpty()) return s;
   GrowBuf growBuf;
@@ -4535,15 +4551,18 @@ QCString convertToJSString(const QCString &s)
   {
     switch (c)
     {
-      case '"':  growBuf.addStr("\\\""); break;
-      case '\\': if (*p=='u' && *(p+1)=='{') growBuf.addStr("\\");
+      case '"':  if (!singleQuotes) growBuf.addStr("\\\""); else growBuf.addChar(c);
+                 break;
+      case '\'': if (singleQuotes) growBuf.addStr("\\\'"); else growBuf.addChar(c);
+                 break;
+      case '\\': if (*p=='u' && *(p+1)=='{') growBuf.addStr("\\"); // keep \u{..} unicode escapes
                  else growBuf.addStr("\\\\");
                  break;
       default:   growBuf.addChar(c);   break;
     }
   }
   growBuf.addChar(0);
-  return convertCharEntitiesToUTF8(growBuf.get());
+  return keepEntities ? growBuf.get() : convertCharEntitiesToUTF8(growBuf.get());
 }
 
 QCString convertCharEntitiesToUTF8(const QCString &str)
@@ -5440,7 +5459,7 @@ void replaceNamespaceAliases(QCString &scope,size_t i)
       auto it = Doxygen::namespaceAliasMap.find(ns.str());
       if (it!=Doxygen::namespaceAliasMap.end())
       {
-        scope=QCString(it->second)+scope.right(scope.length()-i);
+        scope=it->second+scope.right(scope.length()-i);
         i=it->second.length();
       }
     }
@@ -5875,14 +5894,14 @@ QCString parseCommentAsText(const Definition *scope,const MemberDef *md,
   auto ast    { validatingParseDoc(*parser.get(),
                                    fileName,lineNr,
                                    scope,md,doc,FALSE,FALSE,
-                                   QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT)) };
+                                   QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT),false) };
   auto astImpl = dynamic_cast<const DocNodeAST*>(ast.get());
   if (astImpl)
   {
     TextDocVisitor visitor(t);
     std::visit(visitor,astImpl->root);
   }
-  QCString result = convertCharEntitiesToUTF8(t.str().c_str()).stripWhiteSpace();
+  QCString result = convertCharEntitiesToUTF8(t.str()).stripWhiteSpace();
   int i=0;
   int charCnt=0;
   int l=static_cast<int>(result.length());
@@ -5913,6 +5932,43 @@ QCString parseCommentAsText(const Definition *scope,const MemberDef *md,
 
 //--------------------------------------------------------------------------------------
 
+static std::mutex                               g_docCacheMutex;
+static std::unordered_map<std::string,QCString> g_docCache;
+
+QCString parseCommentAsHtml(const Definition *scope,const MemberDef *member,const QCString &doc,const QCString &fileName,int lineNr)
+{
+  std::lock_guard lock(g_docCacheMutex);
+  auto it = g_docCache.find(doc.str());
+  if (it != g_docCache.end())
+  {
+    //printf("Cache: [%s]->[%s]\n",qPrint(doc),qPrint(it->second));
+    return it->second;
+  }
+  auto parser { createDocParser() };
+  auto ast    { validatingParseTitle(*parser.get(),fileName,lineNr,doc) };
+  auto astImpl = dynamic_cast<const DocNodeAST*>(ast.get());
+  QCString result;
+  if (astImpl)
+  {
+    TextStream t;
+    OutputCodeList codeList;
+    codeList.add<HtmlCodeGenerator>(&t);
+    HtmlDocVisitor visitor(t,codeList,scope,fileName);
+    std::visit(visitor,astImpl->root);
+    result = t.str();
+  }
+  else // fallback, should not happen
+  {
+    result = filterTitle(doc);
+  }
+  //printf("Conversion: [%s]->[%s]\n",qPrint(doc),qPrint(result));
+  g_docCache.insert(std::make_pair(doc.str(),result));
+  return result;
+}
+
+
+//--------------------------------------------------------------------------------------
+
 void writeTypeConstraints(OutputList &ol,const Definition *d,const ArgumentList &al)
 {
   if (al.empty()) return;
@@ -5927,7 +5983,7 @@ void writeTypeConstraints(OutputList &ol,const Definition *d,const ArgumentList 
     ol.endConstraintType();
     ol.startConstraintDocs();
     ol.generateDoc(d->docFile(),d->docLine(),d,nullptr,a.docs,TRUE,FALSE,
-                   QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                   QCString(),FALSE,FALSE);
     ol.endConstraintDocs();
   }
   ol.endConstraintList();
@@ -6097,7 +6153,7 @@ QCString filterTitle(const QCString &title)
     p=i+l;
   }
   tf+=t.substr(p);
-  return QCString(tf);
+  return tf;
 }
 
 //---------------------------------------------------------------------------------------------------
@@ -6110,12 +6166,6 @@ bool genericPatternMatch(const FileInfo &fi,
 {
   bool caseSenseNames = getCaseSenseNames();
   bool found = FALSE;
-
-  // For platforms where the file system is non case sensitive overrule the setting
-  if (!Portable::fileSystemIsCaseSensitive())
-  {
-    caseSenseNames = FALSE;
-  }
 
   if (!patList.empty())
   {
@@ -6162,14 +6212,14 @@ bool genericPatternMatch(const FileInfo &fi,
 bool patternMatch(const FileInfo &fi,const StringVector &patList)
 {
   std::string elem;
-  auto getter = [](std::string s) { return QCString(s); };
+  auto getter = [](std::string s) -> QCString { return s; };
   return genericPatternMatch(fi,patList,elem,getter);
 }
 
 QCString getEncoding(const FileInfo &fi)
 {
   InputFileEncoding elem;
-  auto getter = [](const InputFileEncoding &e) { return e.pattern; };
+  auto getter = [](const InputFileEncoding &e) -> QCString { return e.pattern; };
   if (genericPatternMatch(fi,Doxygen::inputFileEncodingList,elem,getter)) // check for file specific encoding
   {
     return elem.encoding;
@@ -6322,7 +6372,7 @@ QCString replaceColorMarkers(const QCString &str)
     p=i+l;
   }
   if (p<sl) result+=s.substr(p);
-  return QCString(result);
+  return result;
 }
 
 /** Copies the contents of file with name \a src to the newly created
@@ -6364,27 +6414,7 @@ int lineBlock(const QCString &text,const QCString &marker)
 /** Returns a string representation of \a lang. */
 QCString langToString(SrcLangExt lang)
 {
-  switch(lang)
-  {
-    case SrcLangExt::Unknown:  return "Unknown";
-    case SrcLangExt::IDL:      return "IDL";
-    case SrcLangExt::Java:     return "Java";
-    case SrcLangExt::CSharp:   return "C#";
-    case SrcLangExt::D:        return "D";
-    case SrcLangExt::PHP:      return "PHP";
-    case SrcLangExt::ObjC:     return "Objective-C";
-    case SrcLangExt::Cpp:      return "C++";
-    case SrcLangExt::JS:       return "JavaScript";
-    case SrcLangExt::Python:   return "Python";
-    case SrcLangExt::Fortran:  return "Fortran";
-    case SrcLangExt::VHDL:     return "VHDL";
-    case SrcLangExt::XML:      return "XML";
-    case SrcLangExt::SQL:      return "SQL";
-    case SrcLangExt::Markdown: return "Markdown";
-    case SrcLangExt::Slice:    return "Slice";
-    case SrcLangExt::Lex:      return "Lex";
-  }
-  return "Unknown";
+  return to_string(lang);
 }
 
 /** Returns the scope separator to use given the programming language \a lang */
@@ -7421,6 +7451,20 @@ QCString demangleCSharpGenericName(const QCString &name,const QCString &templArg
     result = result.left(idx)+templArgs;
   }
   return result;
+}
+
+QCString extractBeginRawStringDelimiter(const char *rawStart)
+{
+  QCString text=rawStart;
+  int i = text.find('"');
+  assert(i!=-1);
+  return text.mid(i+1,text.length()-i-2); // text=...R"xyz( -> delimiter=xyz
+}
+
+QCString extractEndRawStringDelimiter(const char *rawEnd)
+{
+  QCString text=rawEnd;
+  return text.mid(1,text.length()-2); // text=)xyz" -> delimiter=xyz
 }
 
 

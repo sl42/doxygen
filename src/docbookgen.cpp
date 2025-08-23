@@ -308,8 +308,11 @@ DB_GEN_C1(*m_t)
 void DocbookCodeGenerator::endCodeFragment(const QCString &)
 {
 DB_GEN_C1(*m_t)
+  bool wasHidden = m_hide;
+  m_hide = false;
   //endCodeLine checks is there is still an open code line, if so closes it.
   endCodeLine();
+  m_hide = wasHidden;
 
   *m_t << "</programlisting>";
 }
@@ -614,7 +617,7 @@ DB_GEN_C2("IndexSection " << is)
         {
           if (dd->isLinkableInProject())
           {
-            m_t << "<    xi:include href=\"" << dd->getOutputFileBase() << ".xml\" xmlns:xi=\"http://www.w3.org/2001/XInclude\"/>\n";
+            m_t << "    <xi:include href=\"" << dd->getOutputFileBase() << ".xml\" xmlns:xi=\"http://www.w3.org/2001/XInclude\"/>\n";
           }
         }
       }
@@ -627,7 +630,7 @@ DB_GEN_C2("IndexSection " << is)
         {
           if (nd->isLinkableInProject() && !nd->isAlias())
           {
-            m_t << "<xi:include href=\"" << nd->getOutputFileBase() << ".xml\" xmlns:xi=\"http://www.w3.org/2001/XInclude\"/>\n";
+            m_t << "    <xi:include href=\"" << nd->getOutputFileBase() << ".xml\" xmlns:xi=\"http://www.w3.org/2001/XInclude\"/>\n";
           }
         }
       }
@@ -640,7 +643,7 @@ DB_GEN_C2("IndexSection " << is)
         {
           if (cd->isLinkableInProject() && !cd->isAlias())
           {
-            m_t << "<xi:include href=\"" << cd->getOutputFileBase() << ".xml\" xmlns:xi=\"http://www.w3.org/2001/XInclude\"/>\n";
+            m_t << "    <xi:include href=\"" << cd->getOutputFileBase() << ".xml\" xmlns:xi=\"http://www.w3.org/2001/XInclude\"/>\n";
           }
         }
       }
@@ -830,7 +833,7 @@ void DocbookGenerator::endBold()
 DB_GEN_C
   m_t << "</emphasis>";
 }
-void DocbookGenerator::startGroupHeader(int extraIndentLevel)
+void DocbookGenerator::startGroupHeader(const QCString &,int extraIndentLevel)
 {
 DB_GEN_C2("m_inLevel " << m_inLevel)
 DB_GEN_C2("extraIndentLevel " << extraIndentLevel)
@@ -969,7 +972,7 @@ void DocbookGenerator::endMemberDocName()
 {
 DB_GEN_C
 }
-void DocbookGenerator::startMemberGroupHeader(bool)
+void DocbookGenerator::startMemberGroupHeader(const QCString &,bool)
 {
 DB_GEN_C
   m_t << "<simplesect><title>";
@@ -1412,56 +1415,65 @@ DB_GEN_C
   m_t << theTranslator->trInheritedFrom(convertToDocBook(title), objectLinkToString(ref, file, anchor, name));
 }
 
-void DocbookGenerator::writeLocalToc(const SectionRefs &sectionRefs,const LocalToc &localToc)
+void DocbookGenerator::startLocalToc(int level)
 {
-  if (localToc.isDocbookEnabled())
+  m_tocState.level=1;
+  m_tocState.maxLevel=level;
+  m_tocState.inLi = BoolVector(level+1,false);
+  m_t << "    <toc>\n";
+  m_t << "    <title>" << theTranslator->trRTFTableOfContents() << "</title>\n";
+}
+
+void DocbookGenerator::endLocalToc()
+{
+  if (m_tocState.level > m_tocState.maxLevel) m_tocState.level = m_tocState.maxLevel;
+  while (m_tocState.level>1 && m_tocState.level <= m_tocState.maxLevel)
   {
-    m_t << "    <toc>\n";
-    m_t << "    <title>" << theTranslator->trRTFTableOfContents() << "</title>\n";
-    int level=1;
-    int maxLevel = localToc.docbookLevel();
-    BoolVector inLi(maxLevel+1,false);
-    for (const SectionInfo *si : sectionRefs)
+    m_t << "</tocdiv>\n";
+    m_tocState.level--;
+  }
+  m_t << "    </toc>\n";
+}
+
+void DocbookGenerator::startTocEntry(const SectionInfo *si)
+{
+  SectionType type = si->type();
+  if (type.isSection())
+  {
+    //printf("  level=%d title=%s\n",level,qPrint(si->title));
+    int nextLevel = type.level();
+    if (nextLevel>m_tocState.level)
     {
-      SectionType type = si->type();
-      if (type.isSection())
+      for (int l=m_tocState.level;l<nextLevel;l++)
       {
-        //printf("  level=%d title=%s\n",level,qPrint(si->title));
-        int nextLevel = type.level();
-        if (nextLevel>level)
-        {
-          for (int l=level;l<nextLevel;l++)
-          {
-            if (l < maxLevel) m_t << "    <tocdiv>\n";
-          }
-        }
-        else if (nextLevel<level)
-        {
-          for (int l=level;l>nextLevel;l--)
-          {
-            inLi[l]=FALSE;
-            if (l <= maxLevel) m_t << "    </tocdiv>\n";
-          }
-        }
-        if (nextLevel <= maxLevel)
-        {
-          QCString titleDoc = convertToDocBook(si->title());
-          QCString label    = convertToDocBook(si->label());
-          if (titleDoc.isEmpty()) titleDoc = label;
-          m_t << "      <tocentry>" << titleDoc << "</tocentry>\n";
-        }
-        inLi[nextLevel]=TRUE;
-        level = nextLevel;
+        if (l < m_tocState.maxLevel) m_t << "    <tocdiv>\n";
       }
     }
-    if (level > maxLevel) level = maxLevel;
-    while (level>1 && level <= maxLevel)
+    else if (nextLevel<m_tocState.level)
     {
-      inLi[level]=FALSE;
-      m_t << "</tocdiv>\n";
-      level--;
+      for (int l=m_tocState.level;l>nextLevel;l--)
+      {
+        m_tocState.inLi[l]=false;
+        if (l <= m_tocState.maxLevel) m_t << "    </tocdiv>\n";
+      }
     }
-    m_t << "    </toc>\n";
+    if (nextLevel <= m_tocState.maxLevel)
+    {
+      QCString label = convertToDocBook(si->label());
+      m_t << "      <tocentry>";
+    }
+  }
+}
+
+void DocbookGenerator::endTocEntry(const SectionInfo *si)
+{
+  SectionType type = si->type();
+  int nextLevel = type.level();
+  if (type.isSection() && nextLevel <= m_tocState.maxLevel)
+  {
+    m_t << "</tocentry>\n";
+    m_tocState.inLi[nextLevel]=true;
+    m_tocState.level = nextLevel;
   }
 }
 

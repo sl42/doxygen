@@ -555,7 +555,7 @@ const ClassDef* VhdlDocGen::findArchitecture(const ClassDef *cd)
     StringVector ql=split(jj.str(),":");
     if (ql.size()>1)
     {
-      if (QCString(ql[0])==nn)
+      if (ql[0]==nn)
       {
         return citer.get();
       }
@@ -688,7 +688,7 @@ QCString VhdlDocGen::getIndexWord(const QCString &c,int index)
 
   if (index < static_cast<int>(ql.size()))
   {
-    return QCString(ql[index]);
+    return ql[index];
   }
 
   return "";
@@ -1664,7 +1664,7 @@ void VhdlDocGen::writeVHDLDeclaration(MemberDefMutable* mdef,OutputList &ol,
     ol.generateDoc(mdef->briefFile(),mdef->briefLine(),
                    mdef->getOuterScope()?mdef->getOuterScope():d,
                    mdef,s,TRUE,FALSE,
-                   QCString(),TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                   QCString(),TRUE,FALSE);
     if (detailsVisible)
     {
       ol.pushGeneratorState();
@@ -1759,19 +1759,21 @@ void VhdlDocGen::writeVHDLDeclarations(const MemberList* ml,OutputList &ol,
   {
     ol.startMemberSubtitle();
     ol.generateDoc("[generated]",-1,nullptr,nullptr,subtitle,FALSE,FALSE,
-                   QCString(),TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+                   QCString(),TRUE,FALSE);
     ol.endMemberSubtitle();
   } //printf("memberGroupList=%p\n",memberGroupList);
 
   VhdlDocGen::writePlainVHDLDeclarations(ml,ol,cd,nd,fd,gd,mod,type);
 
+  int groupId=0;
   for (const auto &mg : ml->getMemberGroupList())
   {
     if (membersHaveSpecificType(&mg->members(),type))
     {
       //printf("mg->header=%s\n",qPrint(mg->header()));
       bool hasHeader=!mg->header().isEmpty();
-      ol.startMemberGroupHeader(hasHeader);
+      QCString groupAnchor = QCString(ml->listType().toLabel())+"-"+QCString().setNum(groupId++);
+      ol.startMemberGroupHeader(groupAnchor,hasHeader);
       if (hasHeader)
       {
         ol.parseText(mg->header());
@@ -1782,7 +1784,7 @@ void VhdlDocGen::writeVHDLDeclarations(const MemberList* ml,OutputList &ol,
         //printf("Member group has docs!\n");
         ol.startMemberGroupDocs();
         ol.generateDoc("[generated]",-1,nullptr,nullptr,mg->documentation()+"\n",FALSE,FALSE,
-            QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT));
+            QCString(),FALSE,FALSE);
         ol.endMemberGroupDocs();
       }
       ol.startMemberGroup();
@@ -2117,7 +2119,7 @@ QCString  VhdlDocGen::parseForBinding(QCString & entity,QCString & arch)
   {
     arch=ql[2];
   }
-  return QCString(label);
+  return label;
 }
 
 
@@ -2294,7 +2296,7 @@ void VhdlDocGen::writeRecUnitDocu(
 
   for(size_t i=0;i<len;i++)
   {
-    QCString n=QCString(ql[i]);
+    QCString n = ql[i];
     ol.startParameterType(first,"");
     ol.endParameterType();
     ol.startParameterName(TRUE);
@@ -2374,7 +2376,7 @@ void VhdlDocGen::addBaseClass(ClassDef* cd,ClassDef *ent)
       VhdlDocGen::deleteAllChars(r,'(');
       r.setNum(r.toInt()+1);
       reg::replace(t, reg, r.str());
-      s.append(t.c_str());
+      s.append(t);
       bcd.usedName=s;
       bcd.templSpecifiers=t;
     }
@@ -2631,15 +2633,15 @@ void FlowChart::printNode(const FlowChart& flo)
     }
     if (flo.type & EMPTNODE)
     {
-      printf("\n NO: %s%s[%d,%d]",q.c_str(),FlowChart::getNodeType(flo.type),flo.stamp,flo.id);
+      printf("\n NO: %s%s[%d,%d]",qPrint(q),FlowChart::getNodeType(flo.type),flo.stamp,flo.id);
     }
     else if (flo.type & COMMENT_NO)
     {
-      printf("\n NO: %s%s[%d,%d]",t.c_str(),FlowChart::getNodeType(flo.type),flo.stamp,flo.id);
+      printf("\n NO: %s%s[%d,%d]",qPrint(t),FlowChart::getNodeType(flo.type),flo.stamp,flo.id);
     }
     else
     {
-      printf("\n NO: %s[%d,%d]",t.c_str(),flo.stamp,flo.id);
+      printf("\n NO: %s[%d,%d]",qPrint(t),flo.stamp,flo.id);
     }
   }
 }
@@ -3007,8 +3009,11 @@ void  FlowChart::printUmlTree()
   QCString htmlOutDir = Config_getString(HTML_OUTPUT);
 
   QCString n=convertNameToFileName();
-  n=PlantumlManager::instance().writePlantUMLSource(htmlOutDir,n,qcs,PlantumlManager::PUML_SVG,"uml",n,1,true);
-  PlantumlManager::instance().generatePlantUMLOutput(n,htmlOutDir,PlantumlManager::PUML_SVG);
+  auto baseNameVector=PlantumlManager::instance().writePlantUMLSource(htmlOutDir,n,qcs,PlantumlManager::PUML_SVG,"uml",n,1,true);
+  for (const auto &baseName: baseNameVector)
+  {
+    PlantumlManager::instance().generatePlantUMLOutput(baseName,htmlOutDir,PlantumlManager::PUML_SVG);
+  }
 }
 
 QCString FlowChart::convertNameToFileName()

@@ -41,6 +41,7 @@
 #include "portable.h"
 #include "moduledef.h"
 #include "construct.h"
+#include "cite.h"
 
 #define PERLOUTPUT_MAX_INDENTATION 40
 
@@ -614,6 +615,7 @@ void PerlModDocVisitor::operator()(const DocStyleChange &s)
     case DocStyleChange::Div:           style = "div"; break;
     case DocStyleChange::Span:          style = "span"; break;
     case DocStyleChange::Kbd:           style = "kbd"; break;
+    case DocStyleChange::Typewriter:    style = "typewriter"; break;
   }
   openItem("style");
   m_output.addFieldQuotedString("style", style)
@@ -743,7 +745,19 @@ void PerlModDocVisitor::operator()(const DocSimpleSectSep &)
 void PerlModDocVisitor::operator()(const DocCite &cite)
 {
   openItem("cite");
-  m_output.addFieldQuotedString("text", cite.text());
+  auto opt = cite.option();
+  QCString txt;
+  if (!cite.file().isEmpty())
+  {
+    txt = cite.getText();
+  }
+  else
+  {
+    if (!opt.noPar()) txt += "[";
+    txt += cite.target();
+    if (!opt.noPar()) txt += "]";
+  }
+  m_output.addFieldQuotedString("text", txt);
   closeItem();
 }
 
@@ -1371,7 +1385,7 @@ static void addPerlModDocBlock(PerlModOutput &output,
     auto parser { createDocParser() };
     auto ast    { validatingParseDoc(*parser.get(),
                                      fileName,lineNr,scope,md,stext,FALSE,FALSE,
-                                     QCString(),FALSE,FALSE,Config_getBool(MARKDOWN_SUPPORT)) };
+                                     QCString(),FALSE,FALSE) };
     output.openHash(name);
     auto astImpl = dynamic_cast<const DocNodeAST*>(ast.get());
     if (astImpl)
@@ -1386,25 +1400,12 @@ static void addPerlModDocBlock(PerlModOutput &output,
 
 static const char *getProtectionName(Protection prot)
 {
-  switch (prot)
-  {
-    case Protection::Public:    return "public";
-    case Protection::Protected: return "protected";
-    case Protection::Private:   return "private";
-    case Protection::Package:   return "package";
-  }
-  return nullptr;
+  return to_string_lower(prot);
 }
 
 static const char *getVirtualnessName(Specifier virt)
 {
-  switch(virt)
-  {
-    case Specifier::Normal:  return "non_virtual";
-    case Specifier::Virtual: return "virtual";
-    case Specifier::Pure:    return "pure_virtual";
-  }
-  return nullptr;
+  return to_string_lower(virt);
 }
 
 static QCString pathDoxyfile;
