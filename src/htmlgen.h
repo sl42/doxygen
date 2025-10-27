@@ -123,8 +123,8 @@ class HtmlGenerator : public OutputGenerator, public OutputGenIntf
     std::unique_ptr<OutputGenIntf> clone() override { return std::make_unique<HtmlGenerator>(*this); }
     void addCodeGen(OutputCodeList &list) override;
     void cleanup() override;
-    void writeDoc(const IDocNodeAST *node,const Definition *,const MemberDef *,int id) override;
-    void startFile(const QCString &name,const QCString &manName,const QCString &title,int id, int hierarchyLevel) override;
+    void writeDoc(const IDocNodeAST *node,const Definition *,const MemberDef *,int id,int sectionLevel) override;
+    void startFile(const QCString &name,bool isSource,const QCString &manName,const QCString &title,int id, int hierarchyLevel) override;
     void endFile() override;
 
     void writeFooter(const QCString &navPath) override;
@@ -355,9 +355,9 @@ class HtmlGenerator : public OutputGenerator, public OutputGenIntf
       int indent = 0;
       int maxLevel = 0;
       BoolVector inLi;
-      void writeIndent(TextStream &t) { for (int i=0;i<indent*2;i++) t << " "; };
-      void incIndent(TextStream &t,const QCString &text) { writeIndent(t); t << text << "\n"; indent++; };
-      void decIndent(TextStream &t,const QCString &text) { indent--; writeIndent(t); t << text << "\n"; };
+      void writeIndent(TextStream &t) { for (int i=0;i<indent*2;i++) t << " "; }
+      void incIndent(TextStream &t,const QCString &text) { writeIndent(t); t << text << "\n"; indent++; }
+      void decIndent(TextStream &t,const QCString &text) { indent--; writeIndent(t); t << text << "\n"; }
     };
     TocState m_tocState;
 };

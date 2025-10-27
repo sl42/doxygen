@@ -126,6 +126,7 @@ class MemberDefImpl : public DefinitionMixin<MemberDefMutable>
     bool isInline() const override;
     bool isExplicit() const override;
     bool isMutable() const override;
+    bool isThreadLocal() const override;
     bool isGettable() const override;
     bool isPrivateGettable() const override;
     bool isProtectedGettable() const override;
@@ -675,6 +676,8 @@ class MemberDefAliasImpl : public DefinitionAliasMixin<MemberDef>
     { return getMdAlias()->isExplicit(); }
     bool isMutable() const override
     { return getMdAlias()->isMutable(); }
+    bool isThreadLocal() const override
+    { return getMdAlias()->isThreadLocal(); }
     bool isGettable() const override
     { return getMdAlias()->isGettable(); }
     bool isPrivateGettable() const override
@@ -1924,7 +1927,6 @@ void MemberDefImpl::writeLink(OutputList &ol,
   QCString sep = getLanguageSpecificSeparator(lang,TRUE);
   QCString n = name();
   const ClassDef *classDef = getClassDef();
-  const ModuleDef *moduleDef = getModuleDef();
   const NamespaceDef *nspace = getNamespaceDef();
   if (!hideScopeNames)
   {
@@ -1932,11 +1934,11 @@ void MemberDefImpl::writeLink(OutputList &ol,
     {
       n.prepend(m_enumScope->displayName()+sep);
     }
-    if (classDef && gd && !isRelated())
+    if (classDef && (gd || mod) && !isRelated())
     {
       n.prepend(classDef->displayName()+sep);
     }
-    else if (nspace && (gd || fd || moduleDef))
+    else if (nspace && (gd || fd || mod))
     {
       n.prepend(nspace->displayName()+sep);
     }
@@ -2615,10 +2617,15 @@ void MemberDefImpl::writeDeclaration(OutputList &ol,
   {
     auto parser { createDocParser() };
     auto ast    { validatingParseDoc(*parser.get(),
-                                     briefFile(),briefLine(),
+                                     briefFile(),
+                                     briefLine(),
                                      getOuterScope()?getOuterScope():d,
-                                     this,briefDescription(),TRUE,FALSE,
-                                     QCString(),TRUE,FALSE) };
+                                     this,
+                                     briefDescription(),
+                                     DocOptions()
+                                     .setIndexWords(inheritedFrom==nullptr)
+                                     .setSingleLine(true))
+                };
     if (!ast->isEmpty())
     {
       ol.startMemberDescription(anchor(),inheritId);
@@ -2829,6 +2836,7 @@ StringVector MemberDefImpl::getLabels(const Definition *container) const
         if      (inlineInfo && isInline())              sl.emplace_back("inline");
         if      (isExplicit())                          sl.emplace_back("explicit");
         if      (isMutable())                           sl.emplace_back("mutable");
+        if      (isThreadLocal())                       sl.emplace_back("thread_local");
         if      (isStatic())                            sl.emplace_back("static");
         if      (isGettable())                          sl.emplace_back("get");
         if      (isProtectedGettable())                 sl.emplace_back("protected get");
@@ -3266,17 +3274,23 @@ void MemberDefImpl::_writeEnumValues(OutputList &ol,const Definition *container,
 
         if (hasBrief)
         {
-          ol.generateDoc(fmd->briefFile(),fmd->briefLine(),
-              getOuterScope()?getOuterScope():container,
-              fmd,fmd->briefDescription(),TRUE,FALSE,
-              QCString(),FALSE,FALSE);
+          ol.generateDoc(fmd->briefFile(),
+                         fmd->briefLine(),
+                         getOuterScope()?getOuterScope():container,
+                         fmd,
+                         fmd->briefDescription(),
+                         DocOptions()
+                         .setIndexWords(true));
         }
         if (hasDetails)
         {
-          ol.generateDoc(fmd->docFile(),fmd->docLine(),
-              getOuterScope()?getOuterScope():container,
-              fmd,fmd->documentation()+"\n",TRUE,FALSE,
-              QCString(),FALSE,FALSE);
+          ol.generateDoc(fmd->docFile(),
+                         fmd->docLine(),
+                         getOuterScope()?getOuterScope():container,
+                         fmd,
+                         fmd->documentation()+"\n",
+                         DocOptions()
+                         .setIndexWords(true));
         }
         ol.endDescTableData();
         ol.endDescTableRow();
@@ -3372,12 +3386,19 @@ void MemberDefImpl::_writeGroupInclude(OutputList &ol,bool inGroup) const
   // only write out the include file if this is not part of a class or file
   // definition
   bool showGroupedMembInc = Config_getBool(SHOW_GROUPED_MEMB_INC);
+  bool forceLocalIncludes = Config_getBool(FORCE_LOCAL_INCLUDES);
   const FileDef *fd = getFileDef();
   QCString nm;
   if (inGroup && fd && showGroupedMembInc)
   {
-    nm = fd->absFilePath();
-    nm = stripFromIncludePath(nm);
+    if (!Config_getList(STRIP_FROM_INC_PATH).empty())
+    {
+      nm = stripFromIncludePath(fd->absFilePath());
+    }
+    else
+    {
+      nm = fd->name();
+    }
   }
   if (!nm.isEmpty())
   {
@@ -3394,7 +3415,7 @@ void MemberDefImpl::_writeGroupInclude(OutputList &ol,bool inGroup) const
       ol.docify("#include ");
     }
 
-    if (isIDLorJava) ol.docify("\""); else ol.docify("<");
+    if (isIDLorJava || forceLocalIncludes) ol.docify("\""); else ol.docify("<");
 
     if (fd->isLinkable())
     {
@@ -3405,7 +3426,7 @@ void MemberDefImpl::_writeGroupInclude(OutputList &ol,bool inGroup) const
       ol.docify(nm);
     }
 
-    if (isIDLorJava) ol.docify("\""); else ol.docify(">");
+    if (isIDLorJava || forceLocalIncludes) ol.docify("\""); else ol.docify(">");
 
     ol.endTypewriter();
     ol.endParagraph();
@@ -3830,10 +3851,13 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
      )
   {
     ol.startParagraph();
-    ol.generateDoc(briefFile(),briefLine(),
-                scopedContainer,this,
-                brief,FALSE,FALSE,
-                QCString(),TRUE,FALSE);
+    ol.generateDoc(briefFile(),
+                   briefLine(),
+                   scopedContainer,
+                   this,
+                   brief,
+                   DocOptions()
+                   .setSingleLine(true));
     ol.endParagraph();
   }
 
@@ -3850,24 +3874,37 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
     }
     else
     {
-      ol.generateDoc(docFile(),docLine(),scopedContainer,this,detailed+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(docFile(),
+                     docLine(),
+                     scopedContainer,
+                     this,
+                     detailed+"\n",
+                     DocOptions()
+                     .setIndexWords(true));
     }
 
     if (!inbodyDocumentation().isEmpty())
     {
-      ol.generateDoc(inbodyFile(),inbodyLine(),
-                     scopedContainer,this,
-                     inbodyDocumentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(inbodyFile(),
+                     inbodyLine(),
+                     scopedContainer,
+                     this,
+                     inbodyDocumentation()+"\n",
+                     DocOptions()
+                     .setIndexWords(true));
     }
   }
   else if (!brief.isEmpty() && (Config_getBool(REPEAT_BRIEF) || !Config_getBool(BRIEF_MEMBER_DESC)))
   {
     if (!inbodyDocumentation().isEmpty())
     {
-      ol.generateDoc(inbodyFile(),inbodyLine(),scopedContainer,this,inbodyDocumentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(inbodyFile(),
+                     inbodyLine(),
+                     scopedContainer,
+                     this,
+                     inbodyDocumentation()+"\n",
+                     DocOptions()
+                     .setIndexWords(true));
     }
   }
 
@@ -3878,28 +3915,24 @@ void MemberDefImpl::writeDocumentation(const MemberList *ml,
   const ArgumentList &docArgList = m_templateMaster ?
                                    m_templateMaster->argumentList() :
                                    m_defArgList;
-  ol.generateDoc(
-        docFile(),docLine(),
-        scopedContainer,
-        this,         // memberDef
-        inlineArgListToDoc(docArgList),    // docStr
-        TRUE,         // indexWords
-        FALSE,        // isExample
-        QCString(),FALSE,FALSE
-        );
+  ol.generateDoc(docFile(),
+                 docLine(),
+                 scopedContainer,
+                 this,         // memberDef
+                 inlineArgListToDoc(docArgList),    // docStr
+                 DocOptions()
+                 .setIndexWords(true));
 
   const ArgumentList &docTemplateArgList = m_templateMaster ?
                                    m_templateMaster->templateArguments() :
                                    m_tArgList;
-  ol.generateDoc(
-        docFile(),docLine(),
-        scopedContainer,
-        this,         // memberDef
-        inlineTemplateArgListToDoc(docTemplateArgList),    // docStr
-        TRUE,         // indexWords
-        FALSE,        // isExample
-        QCString(),FALSE,FALSE
-        );
+  ol.generateDoc(docFile(),
+                 docLine(),
+                 scopedContainer,
+                 this,         // memberDef
+                 inlineTemplateArgListToDoc(docTemplateArgList),    // docStr
+                 DocOptions()
+                 .setIndexWords(true));
 
   _writeEnumValues(ol,scopedContainer,cfname,ciname,cname);
   _writeReimplements(ol);
@@ -4041,10 +4074,12 @@ void MemberDefImpl::writeMemberDocSimple(OutputList &ol, const Definition *conta
   /* write brief description */
   if (!brief.isEmpty())
   {
-    ol.generateDoc(briefFile(),briefLine(),
-                getOuterScope()?getOuterScope():container,this,
-                brief,FALSE,FALSE,
-                QCString(),TRUE,FALSE);
+    ol.generateDoc(briefFile(),
+                   briefLine(),
+                   getOuterScope()?getOuterScope():container,this,
+                   brief,
+                   DocOptions()
+                   .setSingleLine(true));
   }
 
   /* write detailed description */
@@ -4056,11 +4091,11 @@ void MemberDefImpl::writeMemberDocSimple(OutputList &ol, const Definition *conta
       ol.lineBreak();
       ol.enable(OutputType::Html);
     }
-    ol.generateDoc(docFile(),docLine(),
-                getOuterScope()?getOuterScope():container,this,
-                detailed+"\n",FALSE,FALSE,
-                QCString(),FALSE,FALSE);
-
+    ol.generateDoc(docFile(),
+                   docLine(),
+                   getOuterScope()?getOuterScope():container,this,
+                   detailed+"\n",
+                   DocOptions());
   }
 
   ol.endInlineMemberDoc();
@@ -4288,7 +4323,8 @@ void MemberDefImpl::warnIfUndocumentedParams() const
           isVoidReturn        || // void return type
           isFortranSubroutine || // fortran subroutine
           isConstructor()     || // a constructor
-          isDestructor()         // or destructor
+          isDestructor()      || // or a destructor
+          isFriend()             // or a friend
          )
        )
     {
@@ -4499,7 +4535,8 @@ bool MemberDefImpl::hasMultiLineInitializer() const
 
 void MemberDefImpl::setInitializer(const QCString &initializer)
 {
-  m_initializer=initializer;
+  size_t indent=0;
+  m_initializer=detab(initializer,indent);
   int l=static_cast<int>(m_initializer.length());
   int p=l-1;
   while (p>=0 && isspace(static_cast<uint8_t>(m_initializer.at(p)))) p--;
@@ -5268,6 +5305,11 @@ bool MemberDefImpl::isExplicit() const
 bool MemberDefImpl::isMutable() const
 {
   return m_memSpec.isMutable();
+}
+
+bool MemberDefImpl::isThreadLocal() const
+{
+  return m_memSpec.isThreadLocal();
 }
 
 bool MemberDefImpl::isGettable() const
@@ -6177,8 +6219,8 @@ void combineDeclarationAndDefinition(MemberDefMutable *mdec,MemberDefMutable *md
     ArgumentList &mdefAl = const_cast<ArgumentList&>(mdef->argumentList());
     ArgumentList &mdecAl = const_cast<ArgumentList&>(mdec->argumentList());
     if (sameNumTemplateArgs &&
-        matchArguments2(mdef->getOuterScope(),mdef->getFileDef(),&mdefAl,
-                        mdec->getOuterScope(),mdec->getFileDef(),&mdecAl,
+        matchArguments2(mdef->getOuterScope(),mdef->getFileDef(),mdef->typeString(),&mdefAl,
+                        mdec->getOuterScope(),mdec->getFileDef(),mdec->typeString(),&mdecAl,
                         TRUE,mdef->getLanguage()
                        )
        ) /* match found */

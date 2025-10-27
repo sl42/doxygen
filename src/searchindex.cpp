@@ -552,3 +552,5 @@ void finalizeSearchIndexer()
 {
   Doxygen::searchIndex.setKind(SearchIndexIntf::Disabled);
 }
+
+

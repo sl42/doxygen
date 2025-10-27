@@ -120,8 +120,7 @@ void DefinitionImpl::Private::setDefFileName(const QCString &df)
 void DefinitionImpl::Private::init(const QCString &df, const QCString &n)
 {
   setDefFileName(df);
-  QCString lname = n;
-  if (lname!="<globalScope>")
+  if (n!="<globalScope>")
   {
     //extractNamespaceName(m_name,m_localName,ns);
     localName=stripScope(n);
@@ -158,7 +157,7 @@ static bool matchExcludedSymbols(const QCString &name)
 {
   const StringVector &exclSyms = Config_getList(EXCLUDE_SYMBOLS);
   if (exclSyms.empty()) return FALSE; // nothing specified
-  std::string symName = name.str();
+  const std::string &symName = name.str();
   for (const auto &pat : exclSyms)
   {
     QCString pattern = pat;
@@ -689,7 +688,7 @@ class FilterCache
       assert(startLineOffset <= endLineOffset);
       const size_t fragmentSize = endLineOffset-startLineOffset;
       return std::tie(startLineOffset,fragmentSize);
-    };
+    }
 
     //! Shrinks buffer \a str which should hold the contents of \a fileName to the
     //! fragment starting a line \a startLine and ending at line \a endLine
@@ -1038,9 +1037,10 @@ void DefinitionImpl::writeInlineCode(OutputList &ol,const QCString &scopeName) c
 
       auto &codeOL = ol.codeGenerators();
       codeOL.startCodeFragment("DoxyCode");
+      size_t indent = 0;
       intf->parseCode(codeOL,           // codeOutIntf
                       scopeName,        // scope
-                      codeFragment,     // input
+                      detab(codeFragment,indent), // input
                       p->lang,     // lang
                       Config_getBool(STRIP_CODE_COMMENTS),
                       FALSE,            // isExample
@@ -1462,8 +1462,16 @@ void DefinitionImpl::writeToc(OutputList &ol, const LocalToc &localToc) const
         const Definition *scope = p->def->definitionType()==Definition::TypeMember ? p->def->getOuterScope() : p->def;
         QCString docTitle = si->title();
         if (docTitle.isEmpty()) docTitle = si->label();
-        ol.generateDoc(docFile(),getStartBodyLine(),scope,md,docTitle,TRUE,FALSE,
-                       QCString(),TRUE,FALSE);
+        ol.generateDoc(docFile(),
+                       getStartBodyLine(),
+                       scope,
+                       md,
+                       docTitle,
+                       DocOptions()
+                       .setIndexWords(true)
+                       .setSingleLine(true)
+                       .setSectionLevel(si->type().level())
+                      );
         ol.endTocEntry(si);
       }
     }
@@ -1564,13 +1572,13 @@ static QCString abbreviate(const QCString &s,const QCString &name)
     stripWord(result,str);
   }
 
-  // capitalize first word
+  // capitalize first character
   if (!result.isEmpty())
   {
-    char c=result[0];
-    if (c>='a' && c<='z') c+='A'-'a';
-    result[0]=c;
+    char c = result[0];
+    if (c >= 'a' && c <= 'z') result[0] += 'A' - 'a';
   }
+
   return result;
 }
 
@@ -1922,13 +1930,11 @@ const QCString &DefinitionAliasImpl::name() const
 
 Definition *toDefinition(DefinitionMutable *dm)
 {
-  if (dm==nullptr) return nullptr;
-  return dm->toDefinition_();
+  return dm ? dm->toDefinition_() : nullptr;
 }
 
 DefinitionMutable *toDefinitionMutable(Definition *d)
 {
-  if (d==nullptr) return nullptr;
-  return d->toDefinitionMutable_();
+  return d ? d->toDefinitionMutable_() : nullptr;
 }
 

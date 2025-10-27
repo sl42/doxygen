@@ -194,7 +194,7 @@ void FTVHelp::addContentsItem(bool isDir,
                               const QCString &nameAsHtml
                               )
 {
-  //printf("%p: p->indent=%d addContentsItem(%d,%s,%s,%s,%s)\n",(void*)this,p->indent,isDir,qPrint(name),qPrint(ref),qPrint(file),qPrint(anchor));
+  //printf("%p: p->indent=%d addContentsItem(isDir=%d,name=%s,ref=%s,file=%s,anchor=%s,nameAsHtml=%s)\n",(void*)this,p->indent,isDir,qPrint(name),qPrint(ref),qPrint(file),qPrint(anchor),qPrint(nameAsHtml));
   auto &nl = p->indentNodes[p->indent];
   if (!nl.empty())
   {
@@ -334,9 +334,15 @@ static void generateBriefDoc(TextStream &t,const Definition *def)
   {
     auto parser { createDocParser() };
     auto ast    { validatingParseDoc(*parser.get(),
-                                     def->briefFile(),def->briefLine(),
-                                     def,nullptr,brief,FALSE,FALSE,
-                                     QCString(),TRUE,TRUE) };
+                                     def->briefFile(),
+                                     def->briefLine(),
+                                     def,
+                                     nullptr,
+                                     brief,
+                                     DocOptions()
+                                     .setSingleLine(true)
+                                     .setLinkFromIndex(true))
+                 };
     const DocNodeAST *astImpl = dynamic_cast<const DocNodeAST*>(ast.get());
     if (astImpl)
     {

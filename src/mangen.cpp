@@ -334,7 +334,7 @@ static QCString buildFileName(const QCString &name)
   return fileName;
 }
 
-void ManGenerator::startFile(const QCString &,const QCString &manName,const QCString &,int,int)
+void ManGenerator::startFile(const QCString &,bool,const QCString &manName,const QCString &,int,int)
 {
   startPlainFile( buildFileName( manName ) );
   m_firstCol=TRUE;
@@ -492,19 +492,6 @@ void ManGenerator::writeChar(char c)
   }
   //printf("%c",c);fflush(stdout);
   m_paragraph=FALSE;
-}
-
-void ManGenerator::startTitle()
-{
-  if (!m_firstCol) m_t << "\n";
-  m_t << ".SH \"";
-  m_firstCol=FALSE;
-  m_paragraph=FALSE;
-}
-
-void ManGenerator::endTitle()
-{
-    m_t << "\"";
 }
 
 void ManGenerator::startItemListItem()
@@ -760,7 +747,7 @@ void ManGenerator::endDescTable()
   endDescForItem();
 }
 
-void ManGenerator::writeDoc(const IDocNodeAST *ast,const Definition *ctx,const MemberDef *,int)
+void ManGenerator::writeDoc(const IDocNodeAST *ast,const Definition *ctx,const MemberDef *,int,int)
 {
   const DocNodeAST *astImpl = dynamic_cast<const DocNodeAST *>(ast);
   if (astImpl)

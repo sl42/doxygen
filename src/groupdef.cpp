@@ -379,9 +379,9 @@ bool GroupDefImpl::insertMember(MemberDef *md,bool docOnly)
 
     if (srcMd->isFunction() && md->isFunction() && // both are a function
         (tSrcMdAl.size()==tMdAl.size()) &&       // same number of template arguments
-        matchArguments2(srcMd->getOuterScope(),srcMd->getFileDef(),&srcMdAl,
-                        md->getOuterScope(),md->getFileDef(),&mdAl,
-                        TRUE,srcMd->getLanguage()
+        matchArguments2(srcMd->getOuterScope(),srcMd->getFileDef(),srcMd->typeString(),&srcMdAl,
+                           md->getOuterScope(),   md->getFileDef(),   md->typeString(),&mdAl,
+                           TRUE,srcMd->getLanguage()
                        ) && // matching parameters
         sameScope // both are found in the same scope
        )
@@ -809,8 +809,12 @@ void GroupDefImpl::writeDetailedDescription(OutputList &ol,const QCString &title
     // repeat brief description
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF))
     {
-      ol.generateDoc(briefFile(),briefLine(),this,nullptr,briefDescription(),FALSE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(briefFile(),
+                     briefLine(),
+                     this,
+                     nullptr,
+                     briefDescription(),
+                     DocOptions());
     }
     // write separator between brief and details
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF) &&
@@ -829,15 +833,25 @@ void GroupDefImpl::writeDetailedDescription(OutputList &ol,const QCString &title
     // write detailed documentation
     if (!documentation().isEmpty())
     {
-      ol.generateDoc(docFile(),docLine(),this,nullptr,documentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(docFile(),
+                     docLine(),
+                     this,
+                     nullptr,
+                     documentation()+"\n",
+                     DocOptions()
+                     .setIndexWords(true));
     }
 
     // write inbody documentation
     if (!inbodyDocumentation().isEmpty())
     {
-      ol.generateDoc(inbodyFile(),inbodyLine(),this,nullptr,inbodyDocumentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(inbodyFile(),
+                     inbodyLine(),
+                     this,
+                     nullptr,
+                     inbodyDocumentation()+"\n",
+                     DocOptions()
+                     .setIndexWords(true));
     }
   }
 }
@@ -848,9 +862,15 @@ void GroupDefImpl::writeBriefDescription(OutputList &ol)
   {
     auto parser { createDocParser() };
     auto ast    { validatingParseDoc(*parser.get(),
-                                     briefFile(),briefLine(),this,nullptr,
-                                     briefDescription(),TRUE,FALSE,
-                                     QCString(),TRUE,FALSE) };
+                                     briefFile(),
+                                     briefLine(),
+                                     this,
+                                     nullptr,
+                                     briefDescription(),
+                                     DocOptions()
+                                     .setIndexWords(true)
+                                     .setSingleLine(true))
+                };
     if (!ast->isEmpty())
     {
       ol.startParagraph();
@@ -926,8 +946,13 @@ void GroupDefImpl::writeFiles(OutputList &ol,const QCString &title)
       if (!fd->briefDescription().isEmpty() && Config_getBool(BRIEF_MEMBER_DESC))
       {
         ol.startMemberDescription(fd->getOutputFileBase());
-        ol.generateDoc(briefFile(),briefLine(),fd,nullptr,fd->briefDescription(),FALSE,FALSE,
-                       QCString(),TRUE,FALSE);
+        ol.generateDoc(briefFile(),
+                       briefLine(),
+                       fd,
+                       nullptr,
+                       fd->briefDescription(),
+                       DocOptions()
+                       .setSingleLine(true));
         ol.endMemberDescription();
       }
       ol.endMemberDeclaration(QCString(),QCString());
@@ -967,15 +992,26 @@ void GroupDefImpl::writeNestedGroups(OutputList &ol,const QCString &title)
         ol.startMemberItem(anc,OutputGenerator::MemberItemType::Normal);
         ol.insertMemberAlign();
         ol.startIndexItem(gd->getReference(),gd->getOutputFileBase());
-        ol.generateDoc(gd->getDefFileName(),gd->getDefLine(),gd,nullptr,gd->groupTitle(),false,false,
-                       QCString(),true,false);
+        ol.generateDoc(gd->getDefFileName(),
+                       gd->getDefLine(),
+                       gd,
+                       nullptr,
+                       gd->groupTitle(),
+                       DocOptions()
+                       .setSingleLine(true)
+                       .setAutolinkSupport(false));
         ol.endIndexItem(gd->getReference(),gd->getOutputFileBase());
         ol.endMemberItem(OutputGenerator::MemberItemType::Normal);
         if (!gd->briefDescription().isEmpty() && Config_getBool(BRIEF_MEMBER_DESC))
         {
           ol.startMemberDescription(gd->getOutputFileBase());
-          ol.generateDoc(briefFile(),briefLine(),gd,nullptr,gd->briefDescription(),false,false,
-                         QCString(),true,false);
+          ol.generateDoc(briefFile(),
+                         briefLine(),
+                         gd,
+                         nullptr,
+                         gd->briefDescription(),
+                         DocOptions()
+                         .setSingleLine(true));
           ol.endMemberDescription();
         }
         ol.endMemberDeclaration(QCString(),QCString());
@@ -1008,8 +1044,13 @@ void GroupDefImpl::writeDirs(OutputList &ol,const QCString &title)
       if (!dd->briefDescription().isEmpty() && Config_getBool(BRIEF_MEMBER_DESC))
       {
         ol.startMemberDescription(dd->getOutputFileBase());
-        ol.generateDoc(briefFile(),briefLine(),dd,nullptr,dd->briefDescription(),FALSE,FALSE,
-                       QCString(),TRUE,FALSE);
+        ol.generateDoc(briefFile(),
+                       briefLine(),
+                       dd,
+                       nullptr,
+                       dd->briefDescription(),
+                       DocOptions()
+                       .setSingleLine(true));
         ol.endMemberDescription();
       }
       ol.endMemberDeclaration(QCString(),QCString());
@@ -1058,8 +1099,13 @@ void GroupDefImpl::writePageDocumentation(OutputList &ol)
         ol.endSection(si->label(),SectionType::Subsection);
       }
       ol.startTextBlock();
-      ol.generateDoc(pd->docFile(),pd->docLine(),pd,nullptr,(pd->documentation()+pd->inbodyDocumentation()),true,false,
-                     QCString(),false,false);
+      ol.generateDoc(pd->docFile(),
+                     pd->docLine(),
+                     pd,
+                     nullptr,
+                     (pd->documentation()+pd->inbodyDocumentation()),
+                     DocOptions()
+                     .setIndexWords(true));
       ol.endTextBlock();
     }
   }
@@ -1188,7 +1234,7 @@ void GroupDefImpl::writeDocumentation(OutputList &ol)
     ++hierarchyLevel;
   }
 
-  startFile(ol,getOutputFileBase(),name(),m_title,HighlightedItem::Topics,
+  startFile(ol,getOutputFileBase(),false,name(),m_title,HighlightedItem::Topics,
             FALSE /* additionalIndices*/, QCString() /*altSidebarName*/, hierarchyLevel);
 
   ol.startHeaderSection();
@@ -1198,8 +1244,15 @@ void GroupDefImpl::writeDocumentation(OutputList &ol)
   //1.{
   ol.pushGeneratorState();
   ol.disable(OutputType::Man);
-  ol.generateDoc(docFile(),getStartBodyLine(),this,nullptr,m_title,TRUE,FALSE,
-                 QCString(),TRUE,FALSE,Config_getBool(MARKDOWN_SUPPORT),false);
+  ol.generateDoc(docFile(),
+                 getStartBodyLine(),
+                 this,
+                 nullptr,
+                 m_title,
+                 DocOptions()
+                 .setIndexWords(true)
+                 .setSingleLine(true)
+                 .setAutolinkSupport(false));
   ol.popGeneratorState();
   //1.}
   addGroupListToTitle(ol,this);

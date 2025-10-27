@@ -353,7 +353,7 @@ void ModuleDefImpl::writeDocumentation(OutputList &ol)
   {
     pageTitle = theTranslator->trModuleReference(displayName());
   }
-  startFile(ol,getOutputFileBase(),name(),pageTitle,HighlightedItem::ModuleVisible,false,QCString(),0);
+  startFile(ol,getOutputFileBase(),false,name(),pageTitle,HighlightedItem::ModuleVisible,false,QCString());
 
   // ---- title part
   ol.startHeaderSection();
@@ -557,8 +557,12 @@ void ModuleDefImpl::writeDetailedDescription(OutputList &ol,const QCString &titl
     ol.startTextBlock();
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF))
     {
-      ol.generateDoc(briefFile(),briefLine(),this,nullptr,briefDescription(),FALSE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(briefFile(),
+                     briefLine(),
+                     this,
+                     nullptr,
+                     briefDescription(),
+                     DocOptions());
     }
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF) &&
         !documentation().isEmpty())
@@ -574,8 +578,13 @@ void ModuleDefImpl::writeDetailedDescription(OutputList &ol,const QCString &titl
     }
     if (!documentation().isEmpty())
     {
-      ol.generateDoc(docFile(),docLine(),this,nullptr,documentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(docFile(),
+                     docLine(),
+                     this,
+                     nullptr,
+                     documentation()+"\n",
+                     DocOptions()
+                     .setIndexWords(true));
     }
     ol.endTextBlock();
   }
@@ -587,9 +596,15 @@ void ModuleDefImpl::writeBriefDescription(OutputList &ol)
   {
     auto parser { createDocParser() };
     auto ast    { validatingParseDoc(*parser.get(),
-                                     briefFile(),briefLine(),this,nullptr,
-                                     briefDescription(),TRUE,FALSE,
-                                     QCString(),TRUE,FALSE) };
+                                     briefFile(),
+                                     briefLine(),
+                                     this,
+                                     nullptr,
+                                     briefDescription(),
+                                     DocOptions()
+                                     .setIndexWords(true)
+                                     .setSingleLine(true))
+                };
     if (!ast->isEmpty())
     {
       ol.startParagraph();
@@ -893,10 +908,15 @@ void ModuleDefImpl::writeDeclarationLink(OutputList &ol,bool &found,const QCStri
     if (!briefDescription().isEmpty() && Config_getBool(BRIEF_MEMBER_DESC))
     {
       auto parser { createDocParser() };
-      auto ast    { validatingParseDoc(
-                                *parser.get(),briefFile(),briefLine(),this,nullptr,
-                                briefDescription(),FALSE,FALSE,
-                                QCString(),TRUE,FALSE) };
+      auto ast    { validatingParseDoc(*parser.get(),
+                                       briefFile(),
+                                       briefLine(),
+                                       this,
+                                       nullptr,
+                                       briefDescription(),
+                                       DocOptions()
+                                       .setSingleLine(true))
+                   };
       if (!ast->isEmpty())
       {
         ol.startMemberDescription(anchor());
@@ -941,8 +961,13 @@ void ModuleDefImpl::writeExports(OutputList &ol,const QCString &title)
         if (mod && !mod->briefDescription().isEmpty() && Config_getBool(BRIEF_MEMBER_DESC))
         {
           ol.startMemberDescription(mod->getOutputFileBase());
-          ol.generateDoc(briefFile(),briefLine(),mod,nullptr,mod->briefDescription(),FALSE,FALSE,
-              QCString(),TRUE,FALSE);
+          ol.generateDoc(briefFile(),
+                         briefLine(),
+                         mod,
+                         nullptr,
+                         mod->briefDescription(),
+                         DocOptions()
+                         .setSingleLine(true));
           ol.endMemberDescription();
         }
         ol.endMemberDeclaration(QCString(),QCString());
@@ -992,8 +1017,13 @@ void ModuleDefImpl::writeFiles(OutputList &ol,const QCString &title)
         if (!fd->briefDescription().isEmpty() && Config_getBool(BRIEF_MEMBER_DESC))
         {
           ol.startMemberDescription(fd->getOutputFileBase());
-          ol.generateDoc(briefFile(),briefLine(),fd,nullptr,fd->briefDescription(),FALSE,FALSE,
-              QCString(),TRUE,FALSE);
+          ol.generateDoc(briefFile(),
+                         briefLine(),
+                         fd,
+                         nullptr,
+                         fd->briefDescription(),
+                         DocOptions()
+                         .setSingleLine(true));
           ol.endMemberDescription();
         }
         ol.endMemberDeclaration(QCString(),QCString());
@@ -1316,7 +1346,7 @@ void ModuleManager::addMemberToModule(const Entry *root,MemberDef *md)
 {
   std::lock_guard lock(p->mutex);
   auto mod = p->moduleFileMap.find(root->fileName);
-  if (mod && root->exported)
+  if (mod && root->exported && md->getClassDef()==nullptr)
   {
     toModuleDefImpl(mod)->addMemberToModule(root,md);
     auto mdm = toMemberDefMutable(md);

@@ -325,7 +325,8 @@ static QCString substituteHtmlKeywords(const QCString &file,
                                        const QCString &str,
                                        const QCString &title,
                                        const QCString &relPath,
-                                       const QCString &navPath=QCString())
+                                       const QCString &navPath=QCString(),
+                                       bool isSource = false)
 {
   // Build CSS/JavaScript tags depending on treeview, search engine settings
   QCString cssFile;
@@ -452,7 +453,7 @@ static QCString substituteHtmlKeywords(const QCString &file,
     searchBox = getSearchBox(serverBasedSearch, relPath, FALSE);
   }
 
-  if (mathJax)
+  if (mathJax && !isSource)
   {
     auto mathJaxVersion = Config_getEnum(MATHJAX_VERSION);
     QCString path = Config_getString(MATHJAX_RELPATH);
@@ -622,20 +623,20 @@ static QCString substituteHtmlKeywords(const QCString &file,
   result = substituteKeywords(file,result,
   {
     // keyword           value getter
-    { "$datetime",       [&]() { return "<span class=\"datetime\"></span>"; } },
-    { "$date",           [&]() { return "<span class=\"date\"></span>";     } },
-    { "$time",           [&]() { return "<span class=\"time\"></span>";     } },
-    { "$year",           [&]() { return "<span class=\"year\"></span>";     } },
-    { "$navpath",        [&]() { return navPath;        } },
-    { "$stylesheet",     [&]() { return cssFile;        } },
-    { "$treeview",       [&]() { return treeViewCssJs;  } },
-    { "$searchbox",      [&]() { return searchBox;      } },
-    { "$search",         [&]() { return searchCssJs;    } },
-    { "$mathjax",        [&]() { return mathJaxJs;      } },
-    { "$darkmode",       [&]() { return darkModeJs;     } },
-    { "$generatedby",    [&]() { return generatedBy;    } },
-    { "$extrastylesheet",[&]() { return extraCssText;   } },
-    { "$relpath$",       [&]() { return relPath;        } } //<-- obsolete: for backwards compatibility only
+    { "$datetime",       [&]() -> QCString { return "<span class=\"datetime\"></span>"; } },
+    { "$date",           [&]() -> QCString { return "<span class=\"date\"></span>";     } },
+    { "$time",           [&]() -> QCString { return "<span class=\"time\"></span>";     } },
+    { "$year",           [&]() -> QCString { return "<span class=\"year\"></span>";     } },
+    { "$navpath",        [&]() -> QCString { return navPath;        } },
+    { "$stylesheet",     [&]() -> QCString { return cssFile;        } },
+    { "$treeview",       [&]() -> QCString { return treeViewCssJs;  } },
+    { "$searchbox",      [&]() -> QCString { return searchBox;      } },
+    { "$search",         [&]() -> QCString { return searchCssJs;    } },
+    { "$mathjax",        [&]() -> QCString { return mathJaxJs;      } },
+    { "$darkmode",       [&]() -> QCString { return darkModeJs;     } },
+    { "$generatedby",    [&]() -> QCString { return generatedBy;    } },
+    { "$extrastylesheet",[&]() -> QCString { return extraCssText;   } },
+    { "$relpath$",       [&]() -> QCString { return relPath;        } } //<-- obsolete: for backwards compatibility only
   });
 
   result = substitute(result,"$relpath^",relPath); //<-- must be done after the previous substitutions
@@ -1557,7 +1558,7 @@ void HtmlGenerator::writeFooterFile(TextStream &t)
 
 static std::mutex g_indexLock;
 
-void HtmlGenerator::startFile(const QCString &name,const QCString &,
+void HtmlGenerator::startFile(const QCString &name,bool isSource,const QCString &,
                               const QCString &title,int /*id*/, int /*hierarchyLevel*/)
 {
   //printf("HtmlGenerator::startFile(%s)\n",qPrint(name));
@@ -1575,7 +1576,7 @@ void HtmlGenerator::startFile(const QCString &name,const QCString &,
   }
 
   m_lastFile = fileName;
-  m_t << substituteHtmlKeywords(g_header_file,g_header,convertToHtml(filterTitle(title)),m_relPath);
+  m_t << substituteHtmlKeywords(g_header_file,g_header,convertToHtml(filterTitle(title)),m_relPath,QCString(),isSource);
 
   m_t << "<!-- " << theTranslator->trGeneratedBy() << " Doxygen "
       << getDoxygenVersion() << " -->\n";
@@ -2747,10 +2748,10 @@ void HtmlGenerator::endExamples()
   m_t << "</dl>\n";
 }
 
-void HtmlGenerator::writeDoc(const IDocNodeAST *ast,const Definition *ctx,const MemberDef *,int id)
+void HtmlGenerator::writeDoc(const IDocNodeAST *ast,const Definition *ctx,const MemberDef *,int id,int sectionLevel)
 {
   const DocNodeAST *astImpl = dynamic_cast<const DocNodeAST*>(ast);
-  if (astImpl)
+  if (astImpl && sectionLevel<=m_tocState.maxLevel)
   {
     m_codeList->setId(id);
     HtmlDocVisitor visitor(m_t,*m_codeList,ctx,fileName());

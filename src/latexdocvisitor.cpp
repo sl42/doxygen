@@ -111,17 +111,17 @@ static void visitPreStart(TextStream &t, bool hasCaption, QCString name,  QCStri
 {
     if (inlineImage)
     {
-      t << "\n\\begin{DoxyInlineImage}\n";
+      t << "\n\\begin{DoxyInlineImage}%\n";
     }
     else
     {
       if (hasCaption)
       {
-        t << "\n\\begin{DoxyImage}\n";
+        t << "\n\\begin{DoxyImage}%\n";
       }
       else
       {
-        t << "\n\\begin{DoxyImageNoCaption}\n"
+        t << "\n\\begin{DoxyImageNoCaption}%\n"
                "  \\mbox{";
       }
     }
@@ -170,11 +170,11 @@ static void visitPreStart(TextStream &t, bool hasCaption, QCString name,  QCStri
       {
         if (Config_getBool(PDF_HYPERLINKS))
         {
-          t << "\n\\doxyfigcaption{";
+          t << "%\n\\doxyfigcaption{";
         }
         else
         {
-          t << "\n\\doxyfigcaptionnolink{";
+          t << "%\n\\doxyfigcaptionnolink{";
         }
       }
       else
@@ -190,11 +190,11 @@ static void visitPostEnd(TextStream &t, bool hasCaption, bool inlineImage = FALS
 {
     if (inlineImage)
     {
-      t << "\n\\end{DoxyInlineImage}\n";
+      t << "%\n\\end{DoxyInlineImage}\n";
     }
     else
     {
-      t << "}\n"; // end mbox or caption
+      t << "}%\n"; // end mbox or caption
       if (hasCaption)
       {
         t << "\\end{DoxyImage}\n";
@@ -236,34 +236,6 @@ void LatexDocVisitor::visitCaption(const DocNodeList &children)
     std::visit(*this,n);
   }
 }
-
-QCString LatexDocVisitor::escapeMakeIndexChars(const char *s)
-{
-  QCString result;
-  const char *p=s;
-  char str[2]; str[1]=0;
-  char c = 0;
-  if (p)
-  {
-    while ((c=*p++))
-    {
-      switch (c)
-      {
-        case '!': m_t << "\"!"; break;
-        case '"': m_t << "\"\""; break;
-        case '@': m_t << "\"@"; break;
-        case '|': m_t << "\\texttt{\"|}"; break;
-        case '[': m_t << "["; break;
-        case ']': m_t << "]"; break;
-        case '{': m_t << "\\lcurly{}"; break;
-        case '}': m_t << "\\rcurly{}"; break;
-        default:  str[0]=c; filter(str); break;
-      }
-    }
-  }
-  return result;
-}
-
 
 LatexDocVisitor::LatexDocVisitor(TextStream &t,OutputCodeList &ci,LatexCodeGenerator &lcg,
                                  const QCString &langExt, int hierarchyLevel)
@@ -378,7 +350,14 @@ void LatexDocVisitor::operator()(const DocURL &u)
 void LatexDocVisitor::operator()(const DocLineBreak &)
 {
   if (m_hide) return;
+  if (m_insideItem)
+  {
+  m_t << "\\\\\n";
+  }
+  else
+  {
   m_t << "~\\newline\n";
+  }
 }
 
 void LatexDocVisitor::operator()(const DocHorRuler &)
@@ -1243,11 +1222,11 @@ void LatexDocVisitor::operator()(const DocHtmlDescList &dl)
 void LatexDocVisitor::operator()(const DocHtmlDescTitle &dt)
 {
   if (m_hide) return;
-  m_t << "\n\\item[";
+  m_t << "\n\\item[{\\parbox[t]{\\linewidth}{";
   m_insideItem=TRUE;
   visitChildren(dt);
   m_insideItem=FALSE;
-  m_t << "]";
+  m_t << "}}]";
 }
 
 void LatexDocVisitor::operator()(const DocHtmlDescData &dd)
@@ -2040,17 +2019,6 @@ void LatexDocVisitor::endDiaFile(bool hasCaption)
 {
   if (m_hide) return;
   visitPostEnd(m_t,hasCaption);
-}
-
-
-void LatexDocVisitor::writeDiaFile(const QCString &baseName, const DocVerbatim &s)
-{
-  QCString shortName = makeShortName(baseName);
-  QCString outDir = Config_getString(LATEX_OUTPUT);
-  writeDiaGraphFromFile(baseName+".dia",outDir,shortName,DiaOutputFormat::EPS,s.srcFile(),s.srcLine());
-  visitPreStart(m_t, s.hasCaption(), shortName, s.width(), s.height());
-  visitCaption(s.children());
-  visitPostEnd(m_t, s.hasCaption());
 }
 
 void LatexDocVisitor::writePlantUMLFile(const QCString &baseName, const DocVerbatim &s)

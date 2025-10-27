@@ -102,8 +102,8 @@ class RTFGenerator : public OutputGenerator, public OutputGenIntf
     std::unique_ptr<OutputGenIntf> clone() override { return std::make_unique<RTFGenerator>(*this); }
     void addCodeGen(OutputCodeList &list) override;
     void cleanup() override;
-    void writeDoc(const IDocNodeAST *ast,const Definition *,const MemberDef *,int) override;
-    void startFile(const QCString &name,const QCString &manName,const QCString &title,int id,int hierarchyLevel) override;
+    void writeDoc(const IDocNodeAST *ast,const Definition *,const MemberDef *,int,int) override;
+    void startFile(const QCString &name,bool isSource,const QCString &manName,const QCString &title,int id,int hierarchyLevel) override;
     void endFile() override;
 
     void writeSearchInfo() override {}
@@ -186,7 +186,7 @@ class RTFGenerator : public OutputGenerator, public OutputGenIntf
     void endDoxyAnchor(const QCString &,const QCString &) override;
     void addLabel(const QCString &,const QCString &) override;
     void writeChar(char c) override;
-    void writeLatexSpacing() override {};//{ m_t << "\\hspace{0.3cm}"; }
+    void writeLatexSpacing() override {}//{ m_t << "\\hspace{0.3cm}"; }
     void writeStartAnnoItem(const QCString &type,const QCString &file,
                             const QCString &path,const QCString &name) override;
     void startCenter() override { m_t << "{\\qc\n"; }

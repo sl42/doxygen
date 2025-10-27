@@ -456,8 +456,13 @@ static void writeXMLDocBlock(TextStream &t,
   // convert the documentation string into an abstract syntax tree
   auto parser { createDocParser() };
   auto ast    { validatingParseDoc(*parser.get(),
-                                   fileName,lineNr,scope,md,text,FALSE,FALSE,
-                                   QCString(),FALSE,FALSE) };
+                                   fileName,
+                                   lineNr,
+                                   scope,
+                                   md,
+                                   text,
+                                   DocOptions())
+               };
   auto astImpl = dynamic_cast<const DocNodeAST*>(ast.get());
   if (astImpl)
   {
@@ -903,6 +908,11 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
     t << " mutable=\"";
     if (md->isMutable()) t << "yes"; else t << "no";
     t << "\"";
+
+    if (md->isThreadLocal())
+    {
+      t << " thread_local=\"yes\"";
+    }
 
     if (md->isInitonly())
     {
@@ -1361,7 +1371,7 @@ static void writeInnerConcepts(const ConceptLinkedRefMap &cl,TextStream &t)
 {
   for (const auto &cd : cl)
   {
-    if (cd->isHidden())
+    if (!cd->isHidden())
     {
       t << "    <innerconcept refid=\"" << cd->getOutputFileBase()
         << "\">" << convertToXML(cd->name()) << "</innerconcept>\n";
@@ -1373,7 +1383,7 @@ static void writeInnerModules(const ModuleLinkedRefMap &ml,TextStream &t)
 {
   for (const auto &mod : ml)
   {
-    if (mod->isHidden())
+    if (!mod->isHidden())
     {
       t << "    <innermodule refid=\"" << mod->getOutputFileBase()
         << "\">" << convertToXML(mod->name()) << "</innermodule>\n";

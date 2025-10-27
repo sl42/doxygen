@@ -1387,19 +1387,13 @@ void ClassDefImpl::findSectionsInDocumentation()
 // add a file name to the used files set
 void ClassDefImpl::insertUsedFile(const FileDef *fd)
 {
-  if (fd==nullptr) return;
-  auto it = std::find(m_files.begin(),m_files.end(),fd);
-  if (it==m_files.end())
-  {
-    m_files.push_back(fd);
-  }
+  if (fd == nullptr) return;
+
+  if (std::find(m_files.begin(), m_files.end(), fd) == m_files.end()) m_files.push_back(fd);
+
   for (const auto &ti : m_templateInstances)
   {
-    ClassDefMutable *cdm = toClassDefMutable(ti.classDef);
-    if (cdm)
-    {
-      cdm->insertUsedFile(fd);
-    }
+    if (ClassDefMutable *cdm = toClassDefMutable(ti.classDef)) cdm->insertUsedFile(fd);
   }
 }
 
@@ -1564,9 +1558,14 @@ void ClassDefImpl::writeBriefDescription(OutputList &ol,bool exampleFlag) const
     ol.disableAllBut(OutputType::Man);
     ol.writeString(" - ");
     ol.popGeneratorState();
-    ol.generateDoc(briefFile(),briefLine(),this,nullptr,
-                   briefDescription(),TRUE,FALSE,QCString(),
-                   TRUE,FALSE);
+    ol.generateDoc(briefFile(),
+                   briefLine(),
+                   this,
+                   nullptr,
+                   briefDescription(),
+                   DocOptions()
+                   .setIndexWords(true)
+                   .setSingleLine(true));
     ol.pushGeneratorState();
     ol.disable(OutputType::RTF);
     ol.writeString(" \n");
@@ -1597,8 +1596,12 @@ void ClassDefImpl::writeDetailedDocumentationBody(OutputList &ol) const
   // repeat brief description
   if (!briefDescription().isEmpty() && repeatBrief)
   {
-    ol.generateDoc(briefFile(),briefLine(),this,nullptr,briefDescription(),FALSE,FALSE,
-                   QCString(),FALSE,FALSE);
+    ol.generateDoc(briefFile(),
+                   briefLine(),
+                   this,
+                   nullptr,
+                   briefDescription(),
+                   DocOptions());
   }
   if (!briefDescription().isEmpty() && repeatBrief &&
       !documentation().isEmpty())
@@ -1611,8 +1614,13 @@ void ClassDefImpl::writeDetailedDocumentationBody(OutputList &ol) const
   // write documentation
   if (!documentation().isEmpty())
   {
-    ol.generateDoc(docFile(),docLine(),this,nullptr,documentation(),TRUE,FALSE,
-                   QCString(),FALSE,FALSE);
+    ol.generateDoc(docFile(),
+                   docLine(),
+                   this,
+                   nullptr,
+                   documentation(),
+                   DocOptions()
+                   .setIndexWords(true));
   }
   // write type constraints
   writeTypeConstraints(ol,this,m_typeConstraints);
@@ -1622,10 +1630,8 @@ void ClassDefImpl::writeDetailedDocumentationBody(OutputList &ol) const
         this,
         nullptr,         // memberDef
         inlineTemplateArgListToDoc(m_tempArgs),    // docStr
-        TRUE,         // indexWords
-        FALSE,        // isExample
-        QCString(),FALSE,FALSE
-        );
+        DocOptions()
+        .setIndexWords(true));
 
   // write examples
   if (hasExamples())
@@ -2264,7 +2270,7 @@ void ClassDefImpl::writeSummaryLinks(OutputList &ol) const
               innerCd->visibleInParentsDeclList()
              )
           {
-            const LayoutDocEntrySection *ls = (const LayoutDocEntrySection*)lde.get();
+            const LayoutDocEntrySection *ls = dynamic_cast<const LayoutDocEntrySection *>(lde.get());
             ol.writeSummaryLink(QCString(),"nested-classes",ls->title(lang),first);
             first=FALSE;
             break;
@@ -2691,9 +2697,14 @@ void ClassDefImpl::writeDeclarationLink(OutputList &ol,bool &found,const QCStrin
     {
       auto parser { createDocParser() };
       auto ast    { validatingParseDoc(*parser.get(),
-                                briefFile(),briefLine(),this,nullptr,
-                                briefDescription(),FALSE,FALSE,
-                                QCString(),TRUE,FALSE) };
+                                       briefFile(),
+                                       briefLine(),
+                                       this,
+                                       nullptr,
+                                       briefDescription(),
+                                       DocOptions()
+                                       .setSingleLine(true))
+                  };
       if (!ast->isEmpty())
       {
         ol.startMemberDescription(anchor());
@@ -2995,7 +3006,7 @@ void ClassDefImpl::writeDocumentation(OutputList &ol) const
   {
     memListFile = getMemberListFileName();
   }
-  startFile(ol,getOutputFileBase(),name(),pageTitle,hli,!generateTreeView,QCString(),0,memListFile);
+  startFile(ol,getOutputFileBase(),false,name(),pageTitle,hli,!generateTreeView,QCString(),0,memListFile);
   if (!generateTreeView)
   {
     if (getOuterScope()!=Doxygen::globalScope)
@@ -3143,7 +3154,7 @@ void ClassDefImpl::writeMemberList(OutputList &ol) const
   }
 
   QCString memListFile = getMemberListFileName();
-  startFile(ol,memListFile,memListFile,theTranslator->trMemberList(),hli,!generateTreeView,getOutputFileBase());
+  startFile(ol,memListFile,false,memListFile,theTranslator->trMemberList(),hli,!generateTreeView,getOutputFileBase());
   if (!generateTreeView)
   {
     if (getOuterScope()!=Doxygen::globalScope)
@@ -3317,7 +3328,7 @@ void ClassDefImpl::writeMemberList(OutputList &ol) const
             (prot!=Protection::Public || (virt!=Specifier::Normal && getLanguage()!=SrcLangExt::ObjC) ||
              md->isFriend() || md->isRelated() || md->isExplicit() ||
              md->isMutable() || (md->isInline() && Config_getBool(INLINE_INFO)) ||
-             md->isSignal() || md->isSlot() ||
+             md->isSignal() || md->isSlot() || md->isThreadLocal() ||
              (getLanguage()==SrcLangExt::IDL &&
               (md->isOptional() || md->isAttribute() || md->isUNOProperty())) ||
              md->isStatic() || lang==SrcLangExt::VHDL
@@ -3337,6 +3348,7 @@ void ClassDefImpl::writeMemberList(OutputList &ol) const
                                                    sl.emplace_back("inline");
             if (md->isExplicit())                  sl.emplace_back("explicit");
             if (md->isMutable())                   sl.emplace_back("mutable");
+            if (md->isThreadLocal())               sl.emplace_back("thread_local");
             if (prot==Protection::Protected)       sl.emplace_back("protected");
             else if (prot==Protection::Private)    sl.emplace_back("private");
             else if (prot==Protection::Package)    sl.emplace_back("package");
@@ -3770,8 +3782,8 @@ void ClassDefImpl::mergeMembersFromBaseClasses(bool mergeVirtualBaseClass)
                   const ArgumentList &srcAl = srcMd->argumentList();
                   const ArgumentList &dstAl = dstMd->argumentList();
                   found=matchArguments2(
-                      srcMd->getOuterScope(),srcMd->getFileDef(),&srcAl,
-                      dstMd->getOuterScope(),dstMd->getFileDef(),&dstAl,
+                      srcMd->getOuterScope(),srcMd->getFileDef(),srcMd->typeString(),&srcAl,
+                      dstMd->getOuterScope(),dstMd->getFileDef(),dstMd->typeString(),&dstAl,
                       TRUE,lang
                       );
                   //printf("      Yes, matching (%s<->%s): %d\n",
@@ -5314,8 +5326,8 @@ bool ClassDefImpl::containsOverload(const MemberDef *md) const
       const ArgumentList &classAl = classMd->argumentList();
       const ArgumentList &al      = md->argumentList();
       bool found = matchArguments2(
-          classMd->getOuterScope(),classMd->getFileDef(),&classAl,
-          md->getOuterScope(),md->getFileDef(),&al,
+          classMd->getOuterScope(),classMd->getFileDef(),classMd->typeString(),&classAl,
+          md->getOuterScope(),md->getFileDef(),md->typeString(),&al,
           true,getLanguage()
           );
       if (found)

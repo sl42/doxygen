@@ -85,8 +85,8 @@ class ManGenerator : public OutputGenerator, public OutputGenIntf
     std::unique_ptr<OutputGenIntf> clone() override { return std::make_unique<ManGenerator>(*this); }
     void addCodeGen(OutputCodeList &list) override;
     void cleanup() override;
-    void writeDoc(const IDocNodeAST *ast,const Definition *,const MemberDef *,int) override;
-    void startFile(const QCString &name,const QCString &manName,const QCString &title,int id, int hierarchyLevel) override;
+    void writeDoc(const IDocNodeAST *ast,const Definition *,const MemberDef *,int,int) override;
+    void startFile(const QCString &name,bool isSource,const QCString &manName,const QCString &title,int id, int hierarchyLevel) override;
     void endFile() override;
 
     void writeSearchInfo() override {}
@@ -222,8 +222,8 @@ class ManGenerator : public OutputGenerator, public OutputGenIntf
     void endDescTableTitle() override { endBoldEmphasis(); }
     void startDescTableRow() override {}
     void endDescTableRow() override {}
-    void startDescTableInit() override {};
-    void endDescTableInit() override {};
+    void startDescTableInit() override {}
+    void endDescTableInit() override {}
     void startDescTableData() override { m_t << "\n"; m_firstCol=TRUE; }
     void endDescTableData() override {}
 
@@ -290,9 +290,6 @@ class ManGenerator : public OutputGenerator, public OutputGenIntf
     void endPlainFile() override { OutputGenerator::endPlainFile(); }
 
   private:
-    void startTitle();
-    void endTitle();
-
     bool m_firstCol = true;
     int  m_col = 0;
     bool m_paragraph = true;

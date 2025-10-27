@@ -400,7 +400,7 @@ void endTitle(OutputList &ol,const QCString &fileName,const QCString &name)
   ol.endHeaderSection();
 }
 
-void startFile(OutputList &ol,const QCString &name,const QCString &manName,
+void startFile(OutputList &ol,const QCString &name,bool isSource,const QCString &manName,
                const QCString &title,HighlightedItem hli,bool additionalIndices,
                const QCString &altSidebarName, int hierarchyLevel, const QCString &allMembersFile)
 {
@@ -408,7 +408,7 @@ void startFile(OutputList &ol,const QCString &name,const QCString &manName,
   bool generateTreeView = Config_getBool(GENERATE_TREEVIEW);
   bool fullSidebar      = Config_getBool(FULL_SIDEBAR);
   bool quickLinksAfterSplitbar = !disableIndex && generateTreeView && fullSidebar;
-  ol.startFile(name,manName,title,hierarchyLevel);
+  ol.startFile(name,isSource,manName,title,hierarchyLevel);
   ol.startQuickIndices();
   if (!disableIndex && !quickLinksAfterSplitbar)
   {
@@ -470,9 +470,8 @@ void endFileWithNavPath(OutputList &ol,const DefinitionMutable *d,bool showPageN
 static void writeMemberToIndex(const Definition *def,const MemberDef *md,bool addToIndex)
 {
   bool isAnonymous = md->isAnonymous();
-  bool hideUndocMembers = Config_getBool(HIDE_UNDOC_MEMBERS);
   const MemberVector &enumList = md->enumFieldList();
-  bool isDir = !enumList.empty() && md->isEnumerate();
+  bool isDir = md->isEnumerate() && std::any_of(enumList.begin(),enumList.end(),[](const auto &emd) { return emd->hasDocumentation(); });
   auto defType = def->definitionType();
   bool namespaceMemberInFileDocs = md->getNamespaceDef() && defType==Definition::TypeFile;
   bool lAddToIndex = addToIndex && !namespaceMemberInFileDocs;
@@ -498,7 +497,7 @@ static void writeMemberToIndex(const Definition *def,const MemberDef *md,bool ad
     }
     for (const auto &emd : enumList)
     {
-      if (!hideUndocMembers || emd->hasDocumentation())
+      if (emd->hasDocumentation())
       {
         namespaceMemberInFileDocs = emd->getNamespaceDef() && defType==Definition::TypeFile;
         lAddToIndex = addToIndex && !namespaceMemberInFileDocs;
@@ -551,7 +550,8 @@ void addMembersToIndex(T *def,LayoutDocManager::LayoutPart part,
                                      def->getReference(),def->getOutputFileBase(),anchor,
                                      hasMembers && !preventSeparateIndex,
                                      addToIndex,
-                                     def);
+                                     def,
+                                     convertToHtml(name));
   //printf("addMembersToIndex(def=%s hasMembers=%d numClasses=%d)\n",qPrint(def->name()),hasMembers,numClasses);
   if (hasMembers || numClasses>0 || numConcepts>0)
   {
@@ -652,12 +652,20 @@ static void writeClassTreeToOutput(OutputList &ol,const BaseClassList &bcl,int l
       //printf("Passed...\n");
       bool hasChildren = visitedClasses.find(cd)==visitedClasses.end() &&
                          classHasVisibleChildren(cd);
+      QCString escapedName = convertToHtml(cd->displayName()); // avoid objective-C '<Protocol>' to be interpreted as XML/HTML tag
       //printf("tree4: Has children %s: %d\n",qPrint(cd->name()),hasChildren);
       if (cd->isLinkable())
       {
         //printf("Writing class %s\n",qPrint(cd->displayName()));
         ol.startIndexItem(cd->getReference(),cd->getOutputFileBase());
-        ol.parseText(cd->displayName());
+        ol.generateDoc(cd->getDefFileName(),
+                       cd->getDefLine(),
+                       cd,
+                       nullptr,
+                       escapedName,
+                       DocOptions()
+                       .setSingleLine(true)
+                       .setAutolinkSupport(false));
         ol.endIndexItem(cd->getReference(),cd->getOutputFileBase());
         if (cd->isReference())
         {
@@ -677,7 +685,7 @@ static void writeClassTreeToOutput(OutputList &ol,const BaseClassList &bcl,int l
           }
           else
           {
-            ftv->addContentsItem(hasChildren,cd->displayName(),cd->getReference(),cd->getOutputFileBase(),cd->anchor(),FALSE,FALSE,cd);
+            ftv->addContentsItem(hasChildren,cd->displayName(),cd->getReference(),cd->getOutputFileBase(),cd->anchor(),FALSE,FALSE,cd,escapedName);
           }
         }
       }
@@ -692,7 +700,7 @@ static void writeClassTreeToOutput(OutputList &ol,const BaseClassList &bcl,int l
         }
         if (ftv)
         {
-          ftv->addContentsItem(hasChildren,cd->displayName(),QCString(),QCString(),QCString(),FALSE,FALSE,cd);
+          ftv->addContentsItem(hasChildren,cd->displayName(),QCString(),QCString(),QCString(),FALSE,FALSE,cd,escapedName);
         }
       }
       if (hasChildren)
@@ -790,7 +798,14 @@ static void writeDirTreeNode(OutputList &ol, const DirDef *dd, int level, FTVHel
 
   ol.startIndexListItem();
   ol.startIndexItem(dd->getReference(),dd->getOutputFileBase());
-  ol.parseText(dd->shortName());
+  ol.generateDoc(dd->getDefFileName(),
+                 dd->getDefLine(),
+                 dd,
+                 nullptr,
+                 dd->shortName(),
+                 DocOptions()
+                 .setSingleLine(true)
+                 .setAutolinkSupport(false));
   ol.endIndexItem(dd->getReference(),dd->getOutputFileBase());
   if (dd->isReference())
   {
@@ -848,7 +863,14 @@ static void writeDirTreeNode(OutputList &ol, const DirDef *dd, int level, FTVHel
         {
           ol.startIndexListItem();
           ol.startIndexItem(reference,outputBase);
-          ol.parseText(fd->displayName());
+          ol.generateDoc(fd->getDefFileName(),
+                         fd->getDefLine(),
+                         fd,
+                         nullptr,
+                         fd->displayName(),
+                         DocOptions()
+                         .setSingleLine(true)
+                         .setAutolinkSupport(false));
           ol.endIndexItem(reference,outputBase);
           ol.endIndexListItem();
           if (ftv && (src || doc))
@@ -1009,12 +1031,20 @@ static void writeClassTreeForList(OutputList &ol,const ClassLinkedMap &cl,bool &
         bool hasChildren = visitedClasses.find(cd.get())==visitedClasses.end() &&
                            classHasVisibleChildren(cd.get());
         //printf("list: Has children %s: %d\n",qPrint(cd->name()),hasChildren);
+        QCString escapedName = convertToHtml(cd->displayName()); // avoid objective-C '<Protocol>' to be interpreted as XML/HTML tag
         if (cd->isLinkable())
         {
           //printf("Writing class %s isLinkable()=%d isLinkableInProject()=%d cd->isImplicitTemplateinstance()=%d\n",
           //    qPrint(cd->displayName()),cd->isLinkable(),cd->isLinkableInProject(),cd->isImplicitTemplateInstance());
           ol.startIndexItem(cd->getReference(),cd->getOutputFileBase());
-          ol.parseText(cd->displayName());
+          ol.generateDoc(cd->getDefFileName(),
+                         cd->getDefLine(),
+                         cd.get(),
+                         nullptr,
+                         escapedName,
+                         DocOptions()
+                         .setSingleLine(true)
+                         .setAutolinkSupport(false));
           ol.endIndexItem(cd->getReference(),cd->getOutputFileBase());
           if (cd->isReference())
           {
@@ -1025,11 +1055,13 @@ static void writeClassTreeForList(OutputList &ol,const ClassLinkedMap &cl,bool &
           if (addToIndex)
           {
             if (cd->getLanguage()!=SrcLangExt::VHDL) // prevents double insertion in Design Unit List
-            	  Doxygen::indexList->addContentsItem(hasChildren,cd->displayName(),cd->getReference(),cd->getOutputFileBase(),cd->anchor(),FALSE,FALSE);
+            {
+              Doxygen::indexList->addContentsItem(hasChildren,cd->displayName(),cd->getReference(),cd->getOutputFileBase(),cd->anchor(),FALSE,FALSE,cd.get(),escapedName);
+            }
           }
           if (ftv)
           {
-            ftv->addContentsItem(hasChildren,cd->displayName(),cd->getReference(),cd->getOutputFileBase(),cd->anchor(),FALSE,FALSE,cd.get());
+            ftv->addContentsItem(hasChildren,cd->displayName(),cd->getReference(),cd->getOutputFileBase(),cd->anchor(),FALSE,FALSE,cd.get(),escapedName);
           }
         }
         else
@@ -1039,11 +1071,11 @@ static void writeClassTreeForList(OutputList &ol,const ClassLinkedMap &cl,bool &
           ol.endIndexItem(QCString(),QCString());
           if (addToIndex)
           {
-            Doxygen::indexList->addContentsItem(hasChildren,cd->displayName(),QCString(),QCString(),QCString(),FALSE,FALSE);
+            Doxygen::indexList->addContentsItem(hasChildren,cd->displayName(),QCString(),QCString(),QCString(),FALSE,FALSE,cd.get(),escapedName);
           }
           if (ftv)
           {
-            ftv->addContentsItem(hasChildren,cd->displayName(),QCString(),QCString(),QCString(),FALSE,FALSE,cd.get());
+            ftv->addContentsItem(hasChildren,cd->displayName(),QCString(),QCString(),QCString(),FALSE,FALSE,cd.get(),escapedName);
           }
         }
         if (cd->getLanguage()==SrcLangExt::VHDL && hasChildren)
@@ -1135,7 +1167,7 @@ static void writeHierarchicalIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trClassHierarchy();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"hierarchy",QCString(), title, HighlightedItem::ClassHierarchy);
+  startFile(ol,"hierarchy",false,QCString(), title, HighlightedItem::ClassHierarchy);
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -1210,7 +1242,7 @@ static void writeGraphicalClassHierarchy(OutputList &ol)
   ol.disableAllBut(OutputType::Html);
   LayoutNavEntry *lne = LayoutDocManager::instance().rootNavEntry()->find(LayoutNavEntry::ClassHierarchy);
   QCString title = lne ? lne->title() : theTranslator->trClassHierarchy();
-  startFile(ol,"inherits",QCString(),title,HighlightedItem::ClassHierarchy,FALSE,"hierarchy");
+  startFile(ol,"inherits",false,QCString(),title,HighlightedItem::ClassHierarchy,FALSE,"hierarchy");
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -1241,7 +1273,7 @@ static void writeHierarchicalInterfaceIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trInterfaceHierarchy();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"interfacehierarchy",QCString(), title, HighlightedItem::InterfaceHierarchy);
+  startFile(ol,"interfacehierarchy",false,QCString(), title, HighlightedItem::InterfaceHierarchy);
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -1315,7 +1347,7 @@ static void writeGraphicalInterfaceHierarchy(OutputList &ol)
   ol.disableAllBut(OutputType::Html);
   LayoutNavEntry *lne = LayoutDocManager::instance().rootNavEntry()->find(LayoutNavEntry::InterfaceHierarchy);
   QCString title = lne ? lne->title() : theTranslator->trInterfaceHierarchy();
-  startFile(ol,"interfaceinherits",QCString(),title,HighlightedItem::InterfaceHierarchy,FALSE,"interfacehierarchy");
+  startFile(ol,"interfaceinherits",false,QCString(),title,HighlightedItem::InterfaceHierarchy,FALSE,"interfacehierarchy");
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -1346,7 +1378,7 @@ static void writeHierarchicalExceptionIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trExceptionHierarchy();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"exceptionhierarchy",QCString(), title, HighlightedItem::ExceptionHierarchy);
+  startFile(ol,"exceptionhierarchy",false,QCString(), title, HighlightedItem::ExceptionHierarchy);
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -1420,7 +1452,7 @@ static void writeGraphicalExceptionHierarchy(OutputList &ol)
   ol.disableAllBut(OutputType::Html);
   LayoutNavEntry *lne = LayoutDocManager::instance().rootNavEntry()->find(LayoutNavEntry::ExceptionHierarchy);
   QCString title = lne ? lne->title() : theTranslator->trExceptionHierarchy();
-  startFile(ol,"exceptioninherits",QCString(),title,HighlightedItem::ExceptionHierarchy,FALSE,"exceptionhierarchy");
+  startFile(ol,"exceptioninherits",false,QCString(),title,HighlightedItem::ExceptionHierarchy,FALSE,"exceptionhierarchy");
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -1513,18 +1545,14 @@ static void writeSingleFileIndex(OutputList &ol,const FileDef *fd)
     ol.startIndexValue(hasBrief);
     if (hasBrief)
     {
-      //ol.docify(" (");
-      ol.generateDoc(
-          fd->briefFile(),fd->briefLine(),
-          fd,nullptr,
-          fd->briefDescription(TRUE),
-          FALSE, // index words
-          FALSE, // isExample
-          QCString(), // example name
-          TRUE,  // single line
-          TRUE   // link from index
-          );
-      //ol.docify(")");
+      ol.generateDoc(fd->briefFile(),
+                     fd->briefLine(),
+                     fd,
+                     nullptr,
+                     fd->briefDescription(true),
+                     DocOptions()
+                     .setSingleLine(true)
+                     .setLinkFromIndex(true));
     }
     if (doc)
     {
@@ -1547,7 +1575,7 @@ static void writeDirIndex(OutputList &ol)
   ol.disable(OutputType::Html);
 
   QCString title = theTranslator->trDirectories();
-  startFile(ol,"dirs",QCString(),title,HighlightedItem::Files);
+  startFile(ol,"dirs",false,QCString(),title,HighlightedItem::Files);
   startTitle(ol,title);
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -1582,7 +1610,7 @@ static void writeFileIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trFileList();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"files",QCString(),title,HighlightedItem::Files);
+  startFile(ol,"files",false,QCString(),title,HighlightedItem::Files);
   startTitle(ol,QCString());
   //if (!Config_getString(PROJECT_NAME).isEmpty())
   //{
@@ -1761,10 +1789,11 @@ static void writeClassTree(const ListType &cl,FTVHelp *ftv,bool addToIndex,bool 
       }
       if (classVisibleInIndex(cd) && !cd->isImplicitTemplateInstance())
       {
+        QCString displayName = cd->displayName(false);
         if (ftv)
         {
-          ftv->addContentsItem(count>0,cd->displayName(FALSE),cd->getReference(),
-                               cd->getOutputFileBase(),cd->anchor(),FALSE,TRUE,cd);
+          ftv->addContentsItem(count>0,displayName,cd->getReference(),
+                               cd->getOutputFileBase(),cd->anchor(),FALSE,TRUE,cd,convertToHtml(displayName));
         }
         if (addToIndex &&
             (cd->getOuterScope()==nullptr ||
@@ -1773,7 +1802,7 @@ static void writeClassTree(const ListType &cl,FTVHelp *ftv,bool addToIndex,bool 
            )
         {
           addMembersToIndex(cd,LayoutDocManager::Class,
-                            cd->displayName(FALSE),
+                            displayName,
                             cd->anchor(),
                             cd->partOfGroups().empty() && !cd->isSimple());
         }
@@ -2032,7 +2061,7 @@ static void writeNamespaceIndex(OutputList &ol)
   if (lne==nullptr) lne = LayoutDocManager::instance().rootNavEntry()->find(LayoutNavEntry::Namespaces); // fall back
   QCString title = lne ? lne->title() : theTranslator->trNamespaceList();
   bool addToIndex = lne==nullptr || lne->visible();
-  startFile(ol,"namespaces",QCString(),title,HighlightedItem::Namespaces);
+  startFile(ol,"namespaces",false,QCString(),title,HighlightedItem::Namespaces);
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -2074,18 +2103,14 @@ static void writeNamespaceIndex(OutputList &ol)
       ol.startIndexValue(hasBrief);
       if (hasBrief)
       {
-        //ol.docify(" (");
-        ol.generateDoc(
-                 nd->briefFile(),nd->briefLine(),
-                 nd.get(),nullptr,
-                 nd->briefDescription(TRUE),
-                 FALSE, // index words
-                 FALSE, // isExample
-                 QCString(),     // example name
-                 TRUE,  // single line
-                 TRUE   // link from index
-                );
-        //ol.docify(")");
+        ol.generateDoc(nd->briefFile(),
+                       nd->briefLine(),
+                       nd.get(),
+                       nullptr,
+                       nd->briefDescription(true),
+                       DocOptions()
+                       .setSingleLine(true)
+                       .setLinkFromIndex(true));
       }
       ol.endIndexValue(nd->getOutputFileBase(),hasBrief);
 
@@ -2202,16 +2227,14 @@ static void writeAnnotatedClassList(OutputList &ol,ClassDef::CompoundType ct)
       ol.startIndexValue(hasBrief);
       if (hasBrief)
       {
-        ol.generateDoc(
-                 cd->briefFile(),cd->briefLine(),
-                 cd.get(),nullptr,
-                 cd->briefDescription(TRUE),
-                 FALSE,  // indexWords
-                 FALSE,  // isExample
-                 QCString(),     // example name
-                 TRUE,  // single line
-                 TRUE   // link from index
-                );
+        ol.generateDoc(cd->briefFile(),
+                       cd->briefLine(),
+                       cd.get(),
+                       nullptr,
+                       cd->briefDescription(true),
+                       DocOptions()
+                       .setSingleLine(true)
+                       .setLinkFromIndex(true));
       }
       ol.endIndexValue(cd->getOutputFileBase(),hasBrief);
 
@@ -2255,26 +2278,6 @@ static QCString letterToLabel(const QCString &startLetter)
 
 //----------------------------------------------------------------------------
 
-/** Class representing a cell in the alphabetical class index. */
-class AlphaIndexTableCell
-{
-  public:
-    AlphaIndexTableCell(int row,int col,const std::string &letter,const ClassDef *cd) :
-      m_letter(letter), m_class(cd), m_row(row), m_col(col)
-    {
-    }
-
-    const ClassDef *classDef() const { return m_class; }
-    std::string letter()       const { return m_letter; }
-    int row()                  const { return m_row; }
-    int column()               const { return m_col; }
-
-  private:
-    std::string m_letter;
-    const ClassDef *m_class;
-    int m_row;
-    int m_col;
-};
 
 using UsedIndexLetters = std::set<std::string>;
 
@@ -2444,7 +2447,7 @@ static void writeAlphabeticalIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trCompoundIndex();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"classes",QCString(),title,HighlightedItem::Classes);
+  startFile(ol,"classes",false,QCString(),title,HighlightedItem::Classes);
 
   startTitle(ol,QCString());
   ol.parseText(title);
@@ -2473,7 +2476,7 @@ static void writeAlphabeticalInterfaceIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trInterfaceIndex();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"interfaces",QCString(),title,HighlightedItem::Interfaces);
+  startFile(ol,"interfaces",false,QCString(),title,HighlightedItem::Interfaces);
 
   startTitle(ol,QCString());
   ol.parseText(title);
@@ -2502,7 +2505,7 @@ static void writeAlphabeticalStructIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trStructIndex();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"structs",QCString(),title,HighlightedItem::Structs);
+  startFile(ol,"structs",false,QCString(),title,HighlightedItem::Structs);
 
   startTitle(ol,QCString());
   ol.parseText(title);
@@ -2531,7 +2534,7 @@ static void writeAlphabeticalExceptionIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trExceptionIndex();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"exceptions",QCString(),title,HighlightedItem::Exceptions);
+  startFile(ol,"exceptions",false,QCString(),title,HighlightedItem::Exceptions);
 
   startTitle(ol,QCString());
   ol.parseText(title);
@@ -2594,7 +2597,7 @@ static void writeAnnotatedIndexGeneric(OutputList &ol,const AnnotatedIndexContex
   QCString title = lne ? lne->title() : ctx.listDefaultTitleText;
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,ctx.fileBaseName,QCString(),title,ctx.hiItem);
+  startFile(ol,ctx.fileBaseName,false,QCString(),title,ctx.hiItem);
 
   startTitle(ol,QCString());
   ol.parseText(title);
@@ -3249,7 +3252,7 @@ static void writeClassMemberIndexFiltered(OutputList &ol, ClassMemberHighlight::
       }
     };
 
-    ol.startFile(fileName+extension,QCString(),title);
+    ol.startFile(fileName+extension,false,QCString(),title);
     ol.startQuickIndices();
     if (!disableIndex && !quickLinksAfterSplitbar)
     {
@@ -3435,7 +3438,7 @@ static void writeFileMemberIndexFiltered(OutputList &ol, FileMemberHighlight::En
       }
     };
 
-    ol.startFile(fileName+extension,QCString(),title);
+    ol.startFile(fileName+extension,false,QCString(),title);
     ol.startQuickIndices();
     if (!disableIndex && !quickLinksAfterSplitbar)
     {
@@ -3619,7 +3622,7 @@ static void writeNamespaceMemberIndexFiltered(OutputList &ol,
       }
     };
 
-    ol.startFile(fileName+extension,QCString(),title);
+    ol.startFile(fileName+extension,false,QCString(),title);
     ol.startQuickIndices();
     if (!disableIndex && !quickLinksAfterSplitbar)
     {
@@ -3796,7 +3799,7 @@ static void writeModuleMemberIndexFiltered(OutputList &ol,
       }
     };
 
-    ol.startFile(fileName+extension,QCString(),title);
+    ol.startFile(fileName+extension,false,QCString(),title);
     ol.startQuickIndices();
     if (!disableIndex && !quickLinksAfterSplitbar)
     {
@@ -3870,7 +3873,7 @@ static void writeExampleIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trExamples();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"examples",QCString(),title,HighlightedItem::Examples);
+  startFile(ol,"examples",false,QCString(),title,HighlightedItem::Examples);
 
   startTitle(ol,QCString());
   ol.parseText(title);
@@ -4022,7 +4025,7 @@ static void writePageIndex(OutputList &ol)
   ol.disableAllBut(OutputType::Html);
   LayoutNavEntry *lne = LayoutDocManager::instance().rootNavEntry()->find(LayoutNavEntry::Pages);
   QCString title = lne ? lne->title() : theTranslator->trRelatedPages();
-  startFile(ol,"pages",QCString(),title,HighlightedItem::Pages);
+  startFile(ol,"pages",false,QCString(),title,HighlightedItem::Pages);
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -4105,7 +4108,7 @@ void writeGraphInfo(OutputList &ol)
   // temporarily disable create subdirs for linking to our example
   Config_updateBool(CREATE_SUBDIRS,FALSE);
 
-  startFile(ol,"graph_legend",QCString(),theTranslator->trLegendTitle());
+  startFile(ol,"graph_legend",false,QCString(),theTranslator->trLegendTitle());
   startTitle(ol,QCString());
   ol.parseText(theTranslator->trLegendTitle());
   endTitle(ol,QCString(),QCString());
@@ -4122,8 +4125,7 @@ void writeGraphInfo(OutputList &ol)
 
   {
     auto fd = createFileDef("","graph_legend.dox");
-    ol.generateDoc("graph_legend",1,fd.get(),nullptr,legendDocs,FALSE,FALSE,
-        QCString(),FALSE,FALSE,FALSE);
+    ol.generateDoc("graph_legend",1,fd.get(),nullptr,legendDocs,DocOptions());
   }
 
   // restore config settings
@@ -4197,9 +4199,14 @@ static void writeGroupTreeNode(OutputList &ol, const GroupDef *gd, int level, FT
 
     ol.startIndexListItem();
     ol.startIndexItem(gd->getReference(),gd->getOutputFileBase());
-    ol.generateDoc(gd->getDefFileName(),gd->getDefLine(),
-                  gd,nullptr,gd->groupTitle(),false,false,
-                  QCString(),true,false);
+    ol.generateDoc(gd->getDefFileName(),
+                   gd->getDefLine(),
+                   gd,
+                   nullptr,
+                   gd->groupTitle(),
+                   DocOptions()
+                   .setSingleLine(true)
+                   .setAutolinkSupport(false));
     ol.endIndexItem(gd->getReference(),gd->getOutputFileBase());
 
     if (gd->isReference())
@@ -4416,7 +4423,7 @@ static void writeTopicIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trTopics();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"topics",QCString(),title,HighlightedItem::Topics);
+  startFile(ol,"topics",false,QCString(),title,HighlightedItem::Topics);
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -4492,7 +4499,14 @@ static void writeModuleTreeNode(OutputList &ol, const ModuleDef *mod,
   }
   ol.startIndexListItem();
   ol.startIndexItem(mod->getReference(),mod->getOutputFileBase());
-  ol.parseText(mod->qualifiedName());
+  ol.generateDoc(mod->getDefFileName(),
+                 mod->getDefLine(),
+                 mod,
+                 nullptr,
+                 mod->qualifiedName(),
+                 DocOptions()
+                 .setSingleLine(true)
+                 .setAutolinkSupport(false));
   ol.endIndexItem(mod->getReference(),mod->getOutputFileBase());
   if (mod->isReference())
   {
@@ -4558,7 +4572,7 @@ static void writeModuleIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trModules();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"modules",QCString(),title,HighlightedItem::Modules);
+  startFile(ol,"modules",false,QCString(),title,HighlightedItem::Modules);
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -4730,7 +4744,7 @@ static void writeConceptIndex(OutputList &ol)
   QCString title = lne ? lne->title() : theTranslator->trConceptList();
   bool addToIndex = lne==nullptr || lne->visible();
 
-  startFile(ol,"concepts",QCString(),title,HighlightedItem::Concepts);
+  startFile(ol,"concepts",false,QCString(),title,HighlightedItem::Concepts);
   startTitle(ol,QCString());
   ol.parseText(title);
   endTitle(ol,QCString(),QCString());
@@ -4765,18 +4779,14 @@ static void writeConceptIndex(OutputList &ol)
       ol.startIndexValue(hasBrief);
       if (hasBrief)
       {
-        //ol.docify(" (");
-        ol.generateDoc(
-                 cd->briefFile(),cd->briefLine(),
-                 cd.get(),nullptr,
-                 cd->briefDescription(TRUE),
-                 FALSE, // index words
-                 FALSE, // isExample
-                 QCString(),     // example name
-                 TRUE,  // single line
-                 TRUE   // link from index
-                );
-        //ol.docify(")");
+        ol.generateDoc(cd->briefFile(),
+                       cd->briefLine(),
+                       cd.get(),
+                       nullptr,
+                       cd->briefDescription(true),
+                       DocOptions()
+                       .setSingleLine(true)
+                       .setLinkFromIndex(true));
       }
       ol.endIndexValue(cd->getOutputFileBase(),hasBrief);
 
@@ -4830,7 +4840,7 @@ static void writeUserGroupStubPage(OutputList &ol,LayoutNavEntry *lne)
   {
     ol.pushGeneratorState();
     ol.disableAllBut(OutputType::Html);
-    startFile(ol,lne->baseFile(),QCString(),lne->title(),HighlightedItem::UserGroup);
+    startFile(ol,lne->baseFile(),false,QCString(),lne->title(),HighlightedItem::UserGroup);
     startTitle(ol,QCString());
     ol.parseText(lne->title());
     endTitle(ol,QCString(),QCString());
@@ -4903,7 +4913,7 @@ static void writeIndex(OutputList &ol)
   }
 
   QCString indexName="index";
-  ol.startFile(indexName,QCString(),title);
+  ol.startFile(indexName,false,QCString(),title);
 
   if (Doxygen::mainPage)
   {
@@ -4960,9 +4970,13 @@ static void writeIndex(OutputList &ol)
     {
       ol.startHeaderSection();
       ol.startTitleHead(QCString());
-      ol.generateDoc(Doxygen::mainPage->docFile(),Doxygen::mainPage->getStartBodyLine(),
-                  Doxygen::mainPage.get(),nullptr,Doxygen::mainPage->title(),false,false,
-                  QCString(),true,false);
+      ol.generateDoc(Doxygen::mainPage->docFile(),
+                     Doxygen::mainPage->getStartBodyLine(),
+                     Doxygen::mainPage.get(),
+                     nullptr,
+                     Doxygen::mainPage->title(),
+                     DocOptions()
+                     .setSingleLine(true));
       headerWritten = TRUE;
     }
   }
@@ -4996,9 +5010,13 @@ static void writeIndex(OutputList &ol)
     }
 
     ol.startTextBlock();
-    ol.generateDoc(defFileName,defLine,Doxygen::mainPage.get(),nullptr,
-                Doxygen::mainPage->documentation(),true,false,
-                QCString(),false,false);
+    ol.generateDoc(defFileName,
+                   defLine,
+                   Doxygen::mainPage.get(),
+                   nullptr,
+                   Doxygen::mainPage->documentation(),
+                   DocOptions()
+                   .setIndexWords(true));
     ol.endTextBlock();
     ol.endPageDoc();
   }
@@ -5041,7 +5059,7 @@ static void writeIndex(OutputList &ol)
     Doxygen::mainPage->writeDocumentation(ol);
   }
 
-  ol.startFile("refman",QCString(),QCString());
+  ol.startFile("refman",false,QCString(),QCString());
   ol.startIndexSection(IndexSection::isTitlePageStart);
   ol.disable(OutputType::Latex);
   ol.disable(OutputType::Docbook);
@@ -5058,8 +5076,12 @@ static void writeIndex(OutputList &ol)
   if (!Config_getString(PROJECT_NUMBER).isEmpty())
   {
     ol.startProjectNumber();
-    ol.generateDoc(defFileName,defLine,Doxygen::mainPage.get(),nullptr,Config_getString(PROJECT_NUMBER),false,false,
-                   QCString(),false,false);
+    ol.generateDoc(defFileName,
+                   defLine,
+                   Doxygen::mainPage.get(),
+                   nullptr,
+                   Config_getString(PROJECT_NUMBER),
+                   DocOptions());
     ol.endProjectNumber();
   }
   ol.endIndexSection(IndexSection::isTitlePageStart);

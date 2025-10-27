@@ -124,6 +124,7 @@ struct SymbolResolver::Private
     {
       m_fileScope = fileScope;
     }
+    const FileDef *fileScope() const { return m_fileScope; }
 
     QCString          resolvedType;
     const MemberDef  *typeDef = nullptr;
@@ -535,7 +536,16 @@ const Definition *SymbolResolver::Private::getResolvedSymbolRec(
           )
          )
       {
-         getResolvedSymbol(visitedKeys,scope,d,args,checkCV,insideCode,explicitScopePart,strippedTemplateParams,false,
+        if (d->definitionType()==Definition::TypeMember)
+        {
+          const MemberDef *emd = dynamic_cast<const MemberDef *>(d);
+          if (emd && emd->isEnumValue() && emd->getEnumScope() && emd->getEnumScope()->isStrong() && explicitScopePart.isEmpty())
+          {
+            // skip lookup for strong enum values without explicit scope, see issue #11799
+            continue;
+          }
+        }
+        getResolvedSymbol(visitedKeys,scope,d,args,checkCV,insideCode,explicitScopePart,strippedTemplateParams,false,
             minDistance,bestMatch,bestTypedef,bestTemplSpec,bestResolvedType);
       }
       if  (minDistance==0) break; // we can stop reaching if we already reached distance 0
@@ -848,9 +858,9 @@ void SymbolResolver::Private::getResolvedSymbol(
         }
         std::unique_ptr<ArgumentList> argList = stringToArgumentList(md->getLanguage(),actArgs);
         const ArgumentList &mdAl = md->argumentList();
-        match = matchArguments2(md->getOuterScope(),md->getFileDef(),&mdAl,
-              scope, md->getFileDef(),argList.get(),
-              checkCV,md->getLanguage());
+        match = matchArguments2(md->getOuterScope(),md->getFileDef(),md->typeString(),&mdAl,
+                                scope,              md->getFileDef(),md->typeString(),argList.get(),
+                                checkCV,md->getLanguage());
         AUTO_TRACE_ADD("match={}",match);
       }
 
@@ -1204,7 +1214,8 @@ const Definition *SymbolResolver::Private::followPath(VisitedKeys &visitedKeys,
     // try to resolve the part if it is a typedef
     const MemberDef *memTypeDef=nullptr;
     QCString qualScopePart = substTypedef(visitedKeys,current,path.mid(is,l),&memTypeDef);
-    AUTO_TRACE_ADD("qualScopePart={}",qualScopePart);
+    AUTO_TRACE_ADD("qualScopePart={} memTypeDef={}",qualScopePart,memTypeDef?memTypeDef->name():"");
+    const Definition *next = nullptr;
     if (memTypeDef)
     {
       const ClassDef *type = newResolveTypedef(visitedKeys,m_fileScope,memTypeDef,nullptr,nullptr,nullptr);
@@ -1214,7 +1225,14 @@ const Definition *SymbolResolver::Private::followPath(VisitedKeys &visitedKeys,
         return type;
       }
     }
-    const Definition *next = current->findInnerCompound(qualScopePart);
+    else if (m_fileScope)
+    {
+      next = endOfPathIsUsedClass(m_fileScope->getUsedDefinitions(),qualScopePart);
+    }
+    if (next==nullptr)
+    {
+      next = current->findInnerCompound(qualScopePart);
+    }
     AUTO_TRACE_ADD("Looking for {} inside {} result={}",
         qualScopePart, current->name(), next?next->name():QCString());
     if (next==nullptr)
@@ -1622,7 +1640,9 @@ const ClassDef *SymbolResolver::resolveClass(const Definition *scope,
       scope?scope->name():QCString(), name, mayBeUnlinkable, mayBeHidden);
   p->reset();
 
-  auto lang = scope ? scope->getLanguage() : SrcLangExt::Cpp;
+  auto lang = scope ? scope->getLanguage() :
+          p->fileScope() ? p->fileScope()->getLanguage() :
+          SrcLangExt::Cpp;  // fallback to C++
 
   if (scope==nullptr ||
       (scope->definitionType()!=Definition::TypeClass &&

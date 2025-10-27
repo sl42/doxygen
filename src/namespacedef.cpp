@@ -1,7 +1,5 @@
 /******************************************************************************
  *
- *
- *
  * Copyright (C) 1997-2015 by Dimitri van Heesch.
  *
  * Permission to use, copy, modify, and distribute this software and its
@@ -577,8 +575,7 @@ void NamespaceDefImpl::insertMember(MemberDef *md)
         }
         if (aliasMd)
         {
-          QCString name = md->name();
-          MemberName *mn = Doxygen::functionNameLinkedMap->add(name);
+          MemberName *mn = Doxygen::functionNameLinkedMap->add(md->name());
           mn->push_back(std::move(aliasMd));
         }
       }
@@ -699,8 +696,12 @@ void NamespaceDefImpl::writeDetailedDescription(OutputList &ol,const QCString &t
     ol.startTextBlock();
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF))
     {
-      ol.generateDoc(briefFile(),briefLine(),this,nullptr,briefDescription(),FALSE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(briefFile(),
+                     briefLine(),
+                     this,
+                     nullptr,
+                     briefDescription(),
+                     DocOptions());
     }
     if (!briefDescription().isEmpty() && Config_getBool(REPEAT_BRIEF) &&
         !documentation().isEmpty())
@@ -716,8 +717,13 @@ void NamespaceDefImpl::writeDetailedDescription(OutputList &ol,const QCString &t
     }
     if (!documentation().isEmpty())
     {
-      ol.generateDoc(docFile(),docLine(),this,nullptr,documentation()+"\n",TRUE,FALSE,
-                     QCString(),FALSE,FALSE);
+      ol.generateDoc(docFile(),
+                     docLine(),
+                     this,
+                     nullptr,
+                     documentation()+"\n",
+                     DocOptions()
+                     .setIndexWords(true));
     }
     ol.endTextBlock();
   }
@@ -729,9 +735,15 @@ void NamespaceDefImpl::writeBriefDescription(OutputList &ol)
   {
     auto parser { createDocParser() };
     auto ast    { validatingParseDoc(*parser.get(),
-                                     briefFile(),briefLine(),this,nullptr,
-                                     briefDescription(),TRUE,FALSE,
-                                     QCString(),TRUE,FALSE) };
+                                     briefFile(),
+                                     briefLine(),
+                                     this,
+                                     nullptr,
+                                     briefDescription(),
+                                     DocOptions()
+                                     .setIndexWords(true)
+                                     .setSingleLine(true))
+                 };
     if (!ast->isEmpty())
     {
       ol.startParagraph();
@@ -980,7 +992,7 @@ void NamespaceDefImpl::writeDocumentation(OutputList &ol)
   //bool fortranOpt = Config_getBool(OPTIMIZE_FOR_FORTRAN);
 
   QCString pageTitle = title();
-  startFile(ol,getOutputFileBase(),name(),pageTitle,HighlightedItem::NamespaceVisible,!generateTreeView);
+  startFile(ol,getOutputFileBase(),false,name(),pageTitle,HighlightedItem::NamespaceVisible,!generateTreeView);
 
   if (!generateTreeView)
   {
@@ -1414,8 +1426,13 @@ void NamespaceLinkedRefMap::writeDeclaration(OutputList &ol,const QCString &titl
       if (!nd->briefDescription().isEmpty() && Config_getBool(BRIEF_MEMBER_DESC))
       {
         ol.startMemberDescription(nd->getOutputFileBase());
-        ol.generateDoc(nd->briefFile(),nd->briefLine(),nd,nullptr,nd->briefDescription(),FALSE,FALSE,
-                       QCString(),TRUE,FALSE);
+        ol.generateDoc(nd->briefFile(),
+                       nd->briefLine(),
+                       nd,
+                       nullptr,
+                       nd->briefDescription(),
+                       DocOptions()
+                       .setSingleLine(true));
         ol.endMemberDescription();
       }
       ol.endMemberDeclaration(QCString(),QCString());

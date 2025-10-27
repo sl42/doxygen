@@ -706,7 +706,7 @@ void LatexGenerator::writeStyleSheetFile(TextStream &t)
   writeDefaultStyleSheet(t);
 }
 
-void LatexGenerator::startFile(const QCString &name,const QCString &,const QCString &,int,int hierarchyLevel)
+void LatexGenerator::startFile(const QCString &name,bool,const QCString &,const QCString &,int,int hierarchyLevel)
 {
 #if 0
   setEncoding(Config_getString(LATEX_OUTPUT_ENCODING));
@@ -1500,18 +1500,6 @@ void LatexGenerator::endTitleHead(const QCString &fileName,const QCString &name)
   }
 }
 
-void LatexGenerator::startTitle()
-{
-  if (Config_getBool(COMPACT_LATEX))
-  {
-    m_t << "\\doxysubsection{";
-  }
-  else
-  {
-    m_t << "\\doxysection{";
-  }
-}
-
 void LatexGenerator::startGroupHeader(const QCString &,int extraIndentLevel)
 {
   if (Config_getBool(COMPACT_LATEX))
@@ -2138,7 +2126,7 @@ void LatexGenerator::exceptionEntry(const QCString &prefix,bool closeBracket)
   m_t << " ";
 }
 
-void LatexGenerator::writeDoc(const IDocNodeAST *ast,const Definition *ctx,const MemberDef *,int)
+void LatexGenerator::writeDoc(const IDocNodeAST *ast,const Definition *ctx,const MemberDef *,int,int)
 {
   const DocNodeAST *astImpl = dynamic_cast<const DocNodeAST*>(ast);
   if (astImpl)

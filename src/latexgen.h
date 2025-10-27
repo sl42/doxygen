@@ -106,17 +106,14 @@ class LatexGenerator : public OutputGenerator, public OutputGenIntf
     static void writeFooterFile(TextStream &t);
     void clearBuffer();
 
-    void setCurrentDoc(const Definition *,const QCString &,bool) {}
-    void addWord(const QCString &,bool) {}
-
     //----------------------------------------------------------------------
 
     OutputType type() const override { return OutputType::Latex; }
     std::unique_ptr<OutputGenIntf> clone() override { return std::make_unique<LatexGenerator>(*this); }
     void addCodeGen(OutputCodeList &list) override;
     void cleanup() override;
-    void writeDoc(const IDocNodeAST *node,const Definition *ctx,const MemberDef *,int id) override;
-    void startFile(const QCString &name,const QCString &manName,const QCString &title,int id,int hierarchyLevel) override;
+    void writeDoc(const IDocNodeAST *node,const Definition *ctx,const MemberDef *,int id,int sectionLevel) override;
+    void startFile(const QCString &name,bool isSource,const QCString &manName,const QCString &title,int id,int hierarchyLevel) override;
     void endFile() override;
 
     void writeSearchInfo() override {}
@@ -321,9 +318,6 @@ class LatexGenerator : public OutputGenerator, public OutputGenIntf
 
 
   private:
-    void startTitle();
-    void endTitle()   { m_t << "}"; }
-
     bool m_firstDescItem = true;
     bool m_disableLinks = false;
     QCString m_relPath;

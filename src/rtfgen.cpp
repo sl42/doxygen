@@ -701,7 +701,7 @@ void RTFGenerator::beginRTFSection()
   m_t << rtf_Style[QCString().sprintf("Heading%d", level).str()].reference() << "\n";
 }
 
-void RTFGenerator::startFile(const QCString &name,const QCString &,const QCString &,int,int hierarchyLevel)
+void RTFGenerator::startFile(const QCString &name,bool,const QCString &,const QCString &,int,int hierarchyLevel)
 {
   //setEncoding(QCString().sprintf("CP%s",theTranslator->trRTFansicp()));
   QCString fileName=name;
@@ -979,7 +979,7 @@ void RTFGenerator::endIndexSection(IndexSection is)
           if (ast)
           {
             m_t << "{\\field\\fldedit {\\*\\fldinst TITLE \\\\*MERGEFORMAT}{\\fldrslt ";
-            writeDoc(ast.get(),nullptr,nullptr,0);
+            writeDoc(ast.get(),nullptr,nullptr,0,-1);
             m_t << "}}\\par\n";
           }
         }
@@ -2618,7 +2618,7 @@ void RTFGenerator::exceptionEntry(const QCString &prefix,bool closeBracket)
   m_t << " ";
 }
 
-void RTFGenerator::writeDoc(const IDocNodeAST *ast,const Definition *ctx,const MemberDef *,int)
+void RTFGenerator::writeDoc(const IDocNodeAST *ast,const Definition *ctx,const MemberDef *,int,int)
 {
   auto astImpl = dynamic_cast<const DocNodeAST*>(ast);
   if (astImpl)
