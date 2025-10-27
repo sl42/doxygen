@@ -1,5 +1,5 @@
 if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  include(FindPythonInterp)
+  find_package(Python REQUIRED)
   execute_process(
     COMMAND ${Python_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/QueryCodePage.py"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
