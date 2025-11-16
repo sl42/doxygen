@@ -778,7 +778,11 @@ size_t Markdown::Private::findEmphasisChar(std::string_view data, char c, size_t
     if (data[i]=='`')
     {
       int snb=0;
-      while (i<size && data[i]=='`') snb++,i++;
+      while (i < size && data[i] == '`')
+      {
+        snb++;
+        i++;
+      }
 
       // find same pattern to end the span
       int enb=0;
@@ -977,11 +981,13 @@ int Markdown::Private::processNmdash(std::string_view data,size_t offset)
   int count=1;
   if (i<size && data[i]=='-') // found --
   {
-    count++,i++;
+    count++;
+    i++;
   }
   if (i<size && data[i]=='-') // found ---
   {
-    count++,i++;
+    count++;
+    i++;
   }
   if (i<size && data[i]=='-') // found ----
   {
@@ -1045,7 +1051,11 @@ int Markdown::Private::processHtmlTagWrite(std::string_view data,size_t offset,b
   size_t i=1;
   size_t l=0;
   // compute length of the tag name
-  while (i<size && isIdChar(data[i])) i++,l++;
+  while (i < size && isIdChar(data[i]))
+  {
+    i++;
+    l++;
+  }
   QCString tagName(data.substr(1,i-1));
   if (tagName.lower()=="pre") // found <pre> tag
   {
@@ -1760,7 +1770,7 @@ int Markdown::Private::processCodeSpan(std::string_view data,size_t offset)
     if (nb>=3) // found ``` that is not at the start of the line, keep it as-is.
     {
       out+=data.substr(0,nb);
-      return nb;
+      return static_cast<int>(nb);
     }
     return 0;  // no matching delimiter
   }
@@ -1910,7 +1920,11 @@ int Markdown::Private::isHeaderline(std::string_view data, bool allowAdjustLevel
   // test of level 1 header
   if (data[i]=='=')
   {
-    while (i<size && data[i]=='=') i++,c++;
+    while (i < size && data[i] == '=')
+    {
+      i++;
+      c++;
+    }
     while (i<size && data[i]==' ') i++;
     int level = (c>1 && (i>=size || data[i]=='\n')) ? 1 : 0;
     if (allowAdjustLevel && level==1 && indentLevel==-1)
@@ -1928,7 +1942,11 @@ int Markdown::Private::isHeaderline(std::string_view data, bool allowAdjustLevel
   // test of level 2 header
   if (data[i]=='-')
   {
-    while (i<size && data[i]=='-') i++,c++;
+    while (i < size && data[i] == '-')
+    {
+      i++;
+      c++;
+    }
     while (i<size && data[i]==' ') i++;
     return (c>1 && (i>=size || data[i]=='\n')) ? indentLevel+2 : 0;
   }
@@ -2132,12 +2150,20 @@ int Markdown::Private::isAtxHeader(std::string_view data,
   {
     return 0;
   }
-  while (i<size && data[i]=='#') i++,level++;
+  while (i < size && data[i] == '#')
+  {
+    i++;
+    level++;
+  }
   if (level>SectionType::MaxLevel) // too many #'s -> no section
   {
     return 0;
   }
-  while (i<size && data[i]==' ') i++,blanks++;
+  while (i < size && data[i] == ' ')
+  {
+    i++;
+    blanks++;
+  }
   if (level==1 && blanks==0)
   {
     return 0; // special case to prevent #someid seen as a header (see bug 671395)
@@ -2270,7 +2296,8 @@ static size_t computeIndentExcludingListMarkers(std::string_view data)
     { // end of indent
       break;
     }
-    indent++,i++;
+    indent++;
+    i++;
   }
   AUTO_TRACE_EXIT("result={}",indent);
   return indent;
@@ -2315,7 +2342,8 @@ static bool isEndOfList(std::string_view data)
 }
 
 static bool isFencedCodeBlock(std::string_view data,size_t refIndent,
-                             QCString &lang,size_t &start,size_t &end,size_t &offset)
+                             QCString &lang,size_t &start,size_t &end,size_t &offset,
+                             QCString &fileName,int lineNr)
 {
   AUTO_TRACE("data='{}' refIndent={}",Trace::trunc(data),refIndent);
   const char dot = '.';
@@ -2328,7 +2356,11 @@ static bool isFencedCodeBlock(std::string_view data,size_t refIndent,
   size_t indent=0;
   int startTildes=0;
   const size_t size = data.size();
-  while (i<size && data[i]==' ') indent++,i++;
+  while (i < size && data[i] == ' ')
+  {
+    indent++;
+    i++;
+  }
   if (indent>=refIndent+4)
   {
     AUTO_TRACE_EXIT("result=false: content is part of code block indent={} refIndent={}",indent,refIndent);
@@ -2336,7 +2368,11 @@ static bool isFencedCodeBlock(std::string_view data,size_t refIndent,
   } // part of code block
   char tildaChar='~';
   if (i<size && data[i]=='`') tildaChar='`';
-  while (i<size && data[i]==tildaChar) startTildes++,i++;
+  while (i < size && data[i] == tildaChar)
+  {
+    startTildes++;
+    i++;
+  }
   if (startTildes<3)
   {
     AUTO_TRACE_EXIT("result=false: no fence marker found #tildes={}",startTildes);
@@ -2382,7 +2418,11 @@ static bool isFencedCodeBlock(std::string_view data,size_t refIndent,
     {
       end=i;
       int endTildes=0;
-      while (i<size && data[i]==tildaChar) endTildes++,i++;
+      while (i < size && data[i] == tildaChar)
+      {
+        endTildes++;
+        i++;
+      }
       while (i<size && data[i]==' ') i++;
       {
         if (endTildes==startTildes)
@@ -2395,6 +2435,7 @@ static bool isFencedCodeBlock(std::string_view data,size_t refIndent,
     }
     i++;
   }
+  warn(fileName, lineNr, "Ending Inside a fenced code block. Maybe the end marker for the block is missing?");
   AUTO_TRACE_EXIT("result=false: no end marker found lang={}'",lang);
   return false;
 }
@@ -2407,7 +2448,11 @@ static bool isCodeBlock(std::string_view data, size_t offset,size_t &indent)
   size_t i=0;
   size_t indent0=0;
   const size_t size = data.size();
-  while (i<size && data[i]==' ') indent0++,i++;
+  while (i < size && data[i] == ' ')
+  {
+    indent0++;
+    i++;
+  }
 
   if (indent0<codeBlockIndent)
   {
@@ -2499,7 +2544,11 @@ static size_t findTableColumns(std::string_view data,size_t &start,size_t &end,s
   size_t i=0,n=0;
   // find start character of the table line
   while (i<size && data[i]==' ') i++;
-  if (i<size && data[i]=='|' && data[i]!='\n') i++,n++; // leading | does not count
+  if (i < size && data[i] == '|' && data[i] != '\n')
+  {
+    i++;
+    n++; // leading | does not count
+  }
   start = i;
 
   // find end character of the table line
@@ -2509,7 +2558,11 @@ static size_t findTableColumns(std::string_view data,size_t &start,size_t &end,s
 
   if (j>0 && i>0) i--; // move i to point before newline
   while (i>0 && data[i]==' ') i--;
-  if (i>0 && data[i-1]!='\\' && data[i]=='|') i--,n++; // trailing or escaped | does not count
+  if (i > 0 && data[i - 1] != '\\' && data[i] == '|')
+  {
+    i--;
+    n++; // trailing or escaped | does not count
+  }
   end = i;
 
   // count columns between start and end
@@ -2995,7 +3048,11 @@ bool skipOverFileAndLineCommands(std::string_view data,size_t indent,size_t &off
       i+=9;
       location=data.substr(locStart,i-locStart);
       location+='\n';
-      while (indent>0 && i<size && data[i]==' ') i++,indent--;
+      while (indent > 0 && i < size && data[i] == ' ')
+      {
+        i++;
+        indent--;
+      }
       if (i<size && data[i]=='\n') i++;
       offset = i;
       return true;
@@ -3020,7 +3077,11 @@ size_t Markdown::Private::writeCodeBlock(std::string_view data,size_t refIndent)
     while (end<=size && data[end-1]!='\n') end++;
     size_t j=i;
     size_t indent=0;
-    while (j<end && data[j]==' ') j++,indent++;
+    while (j < end && data[j] == ' ')
+    {
+      j++;
+      indent++;
+    }
     //printf("j=%d end=%d indent=%d refIndent=%d tabSize=%d data={%s}\n",
     //    j,end,indent,refIndent,Config_getInt(TAB_SIZE),qPrint(QCString(data+i).left(end-i-1)));
     if (j==end-1) // empty line
@@ -3126,12 +3187,20 @@ size_t Markdown::Private::findEndOfLine(std::string_view data,size_t offset)
     }
     else if (nb==0 && data[end-1]=='`')
     {
-      while (end<=size && data[end-1]=='`') end++,nb++;
+      while (end <= size && data[end - 1] == '`')
+      {
+        end++;
+        nb++;
+      }
     }
     else if (nb>0 && data[end-1]=='`')
     {
       size_t enb=0;
-      while (end<=size && data[end-1]=='`') end++,enb++;
+      while (end <= size && data[end - 1] == '`')
+      {
+        end++;
+        enb++;
+      }
       if (enb==nb) nb=0;
     }
     else
@@ -3225,7 +3294,7 @@ QCString Markdown::Private::processQuotations(std::string_view data,size_t refIn
     if (pi!=std::string::npos)
     {
       size_t blockStart=0, blockEnd=0, blockOffset=0;
-      if (isFencedCodeBlock(data.substr(pi),currentIndent,lang,blockStart,blockEnd,blockOffset))
+      if (isFencedCodeBlock(data.substr(pi),currentIndent,lang,blockStart,blockEnd,blockOffset,fileName,lineNr))
       {
         auto addSpecialCommand = [&](const QCString &startCmd,const QCString &endCmd)
         {
@@ -3316,6 +3385,10 @@ QCString Markdown::Private::processQuotations(std::string_view data,size_t refIn
     }
     else
     {
+      if (QCString(data.substr(pi)).startsWith("```") || QCString(data.substr(pi)).startsWith("~~~"))
+      {
+        warn(fileName, lineNr, "Ending inside a fenced code block. Maybe the end marker for the block is missing?");
+      }
       out+=data.substr(pi);
     }
   }
@@ -3480,7 +3553,7 @@ QCString Markdown::Private::processBlocks(std::string_view data,const size_t ind
         i=ref+pi;
         end=i+1;
       }
-      else if (isFencedCodeBlock(data.substr(pi),currentIndent,lang,blockStart,blockEnd,blockOffset))
+      else if (isFencedCodeBlock(data.substr(pi),currentIndent,lang,blockStart,blockEnd,blockOffset,fileName,lineNr))
       {
         //printf("Found FencedCodeBlock lang='%s' start=%d end=%d code={%s}\n",
         //       qPrint(lang),blockStart,blockEnd,QCString(data+pi+blockStart).left(blockEnd-blockStart).data());
