@@ -979,6 +979,7 @@ void linkifyText(const TextGeneratorIntf &out, const Definition *scope,
     {
       const ClassDef     *cd=nullptr;
       const ConceptDef   *cnd=nullptr;
+      const Definition   *d=nullptr;
       //printf("** Match word '%s'\n",qPrint(matchWord));
 
       SymbolResolver resolver(fileScope);
@@ -1010,7 +1011,12 @@ void linkifyText(const TextGeneratorIntf &out, const Definition *scope,
           }
         }
       };
-      if ((cd=getClass(matchWord)))
+
+      if (found)
+      {
+        //printf("   -> skip\n");
+      }
+      else if ((cd=getClass(matchWord)))
       {
         writeCompoundName(cd);
       }
@@ -1022,7 +1028,7 @@ void linkifyText(const TextGeneratorIntf &out, const Definition *scope,
       {
         writeCompoundName(cnd);
       }
-      else if (const Definition *d=nullptr; cd==nullptr && !found && (d=resolver.resolveSymbol(scope,matchWord)))
+      else if ((d=resolver.resolveSymbol(scope,matchWord)))
       {
         writeCompoundName(d);
       }
@@ -1104,7 +1110,6 @@ void writeMarkerList(OutputList &ol,const std::string &markerText,size_t numMark
   reg::Iterator it(markerText,marker);
   reg::Iterator end;
   size_t index=0;
-  // now replace all markers in inheritLine with links to the classes
   for ( ; it!=end ; ++it)
   {
     const auto &match = *it;
@@ -1119,6 +1124,34 @@ void writeMarkerList(OutputList &ol,const std::string &markerText,size_t numMark
     index=newIndex+matchLen;
   }
   ol.parseText(markerText.substr(index));
+}
+
+QCString writeMarkerList(const std::string &markerText,size_t numMarkers,
+                         std::function<QCString(size_t)> replaceFunc)
+{
+  QCString result;
+  static const reg::Ex marker(R"(@(\d+))");
+  reg::Iterator it(markerText,marker);
+  reg::Iterator end;
+  size_t index=0;
+  for ( ; it!=end ; ++it)
+  {
+    const auto &match = *it;
+    size_t newIndex = match.position();
+    size_t matchLen = match.length();
+    result += markerText.substr(index,newIndex-index);
+    unsigned long entryIndex = std::stoul(match[1].str());
+    if (entryIndex<static_cast<unsigned long>(numMarkers))
+    {
+      result+=replaceFunc(entryIndex);
+    }
+    index=newIndex+matchLen;
+  }
+  if (index<markerText.size())
+  {
+    result += markerText.substr(index);
+  }
+  return result;
 }
 
 void writeExamples(OutputList &ol,const ExampleList &list)
@@ -2718,14 +2751,14 @@ bool resolveLink(/* in */ const QCString &scName,
   {
     *resContext=si->definition();
     resAnchor = si->label();
-    AUTO_TRACE_EXIT("section");
+    AUTO_TRACE_EXIT("section anchor={} def={}",resAnchor,si->definition()?si->definition()->name():"<none>");
     return TRUE;
   }
-  else if ((si=SectionManager::instance().find(linkRef)))
+  else if (!prefix.isEmpty() && (si=SectionManager::instance().find(linkRef)))
   {
     *resContext=si->definition();
     resAnchor = si->label();
-    AUTO_TRACE_EXIT("section");
+    AUTO_TRACE_EXIT("section anchor={} def={}",resAnchor,si->definition()?si->definition()->name():"<none>");
     return TRUE;
   }
   else if ((pd=Doxygen::exampleLinkedMap->find(linkRef))) // link to an example
@@ -2966,27 +2999,33 @@ QCString findFilePath(const QCString &file,bool &ambig)
 QCString showFileDefMatches(const FileNameLinkedMap *fnMap,const QCString &n)
 {
   QCString result;
-  QCString name=n;
+  QCString name=Dir::cleanDirPath(n.str());
   QCString path;
   int slashPos=std::max(name.findRev('/'),name.findRev('\\'));
   if (slashPos!=-1)
   {
-    path=name.left(slashPos+1);
+    path=removeLongPathMarker(name.left(slashPos+1));
     name=name.right(name.length()-slashPos-1);
   }
   const FileName *fn=fnMap->find(name);
   if (fn)
   {
     bool first = true;
-    for (const auto &fd : *fn)
+    QCString pathStripped = stripFromIncludePath(path);
+    for (const auto &fd_p : *fn)
     {
-      if (path.isEmpty() || fd->getPath().right(path.length())==path)
+      FileDef *fd = fd_p.get();
+      QCString fdStripPath = stripFromIncludePath(fd->getPath());
+      if (path.isEmpty() ||
+          (!pathStripped.isEmpty() && fdStripPath.endsWith(pathStripped)) ||
+          (pathStripped.isEmpty() && fdStripPath.isEmpty()))
       {
         if (!first) result += "\n";
         else first = false;
         result+="  "+fd->absFilePath();
       }
     }
+
   }
   return result;
 }
@@ -4908,6 +4947,11 @@ QCString stripPath(const QCString &s)
   return result;
 }
 
+QCString makeBaseName(const QCString &name, const QCString &ext)
+{
+  return stripExtensionGeneral(stripPath(name), ext);
+}
+
 /** returns \c TRUE iff string \a s contains word \a w */
 bool containsWord(const QCString &str,const char *word)
 {
@@ -5702,7 +5746,11 @@ QCString createHtmlUrl(const QCString &relPath,
     }
     url+=fn;
   }
-  if (!anchor.isEmpty()) url+="#"+anchor;
+  if (!anchor.isEmpty())
+  {
+    if (!url.endsWith("=")) url+="#";
+    url+=anchor;
+  }
   //printf("createHtmlUrl(relPath=%s,local=%d,target=%s,anchor=%s)=%s\n",qPrint(relPath),isLocalFile,qPrint(targetFileName),qPrint(anchor),qPrint(url));
   return url;
 }
@@ -5990,8 +6038,9 @@ QCString stripIndentation(const QCString &s,bool skipFirstLine)
   return result.str();
 }
 
-// strip up to \a indentationLevel spaces from each line in \a doc (excluding the first line)
-void stripIndentationVerbatim(QCString &doc,const int indentationLevel)
+// strip up to \a indentationLevel spaces from each line in \a doc (excluding the first line
+//  when skipFirstLine is set to true)
+void stripIndentationVerbatim(QCString &doc,const int indentationLevel, bool skipFirstLine)
 {
   //printf("stripIndentationVerbatim(level=%d):\n%s\n------\n",indentationLevel,qPrint(doc));
   if (indentationLevel <= 0 || doc.isEmpty()) return; // nothing to strip
@@ -6001,8 +6050,9 @@ void stripIndentationVerbatim(QCString &doc,const int indentationLevel)
   char c = 0;
   const char *src = doc.data();
   char *dst = doc.rawData();
-  bool insideIndent = false; // skip the initial line from stripping
+  bool insideIndent = !skipFirstLine; // skip the initial line from stripping
   int cnt = 0;
+  if (!skipFirstLine) cnt = indentationLevel;
   while ((c=*src++))
   {
     // invariant: dst<=src
@@ -6900,4 +6950,55 @@ QCString extractEndRawStringDelimiter(const char *rawEnd)
   return text.mid(1,text.length()-2); // text=)xyz" -> delimiter=xyz
 }
 
+static std::mutex         writeFileContents_lock;
+static StringUnorderedSet writeFileContents_set;
 
+/** Thread-safe function to write a string to a file.
+ *  The contents will be used to create a hash that will be used to make the name unique.
+ *  @param[in] baseName the base name of the file to write including path.
+ *  @param[in] extension the file extension to use.
+ *  @param[in] content the data to write to the file
+ *  @param[out] exists is set to true if the file was already written before.
+ *  @returns the name of the file written or an empty string in case of an error.
+ */
+QCString writeFileContents(const QCString &baseName,const QCString &extension,const QCString &content,bool &exists)
+{
+  uint8_t md5_sig[16];
+  char sigStr[33];
+  MD5Buffer(content.data(),static_cast<unsigned int>(content.length()),md5_sig);
+  MD5SigToString(md5_sig,sigStr);
+
+  QCString fileName = baseName + sigStr + extension;
+  { // ==== start atomic section
+    std::lock_guard lock(writeFileContents_lock);
+    auto it=writeFileContents_set.find(fileName.str());
+    exists = it!=writeFileContents_set.end();
+    if (!exists)
+    {
+      writeFileContents_set.insert(fileName.str());
+      if (auto file = Portable::openOutputStream(fileName); file.is_open())
+      {
+        file.write( content.data(), content.length() );
+        file.close();
+      }
+      else
+      {
+        err("Could not open file {} for writing\n",fileName);
+        return QCString();
+      }
+    }
+  } // ==== end atomic section
+  return fileName;
+}
+
+
+void cleanupInlineGraph()
+{
+  if (Config_getBool(DOT_CLEANUP))
+  {
+    for (const auto& fileName: writeFileContents_set)
+    {
+      Dir().remove(qPrint(fileName));
+    }
+  }
+}
