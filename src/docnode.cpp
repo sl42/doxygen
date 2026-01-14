@@ -588,6 +588,9 @@ void DocSecRefItem::parse()
         case SectionType::Table:
           m_refType = Table;
           break;
+        case SectionType::Requirement:
+          m_refType = Requirement;
+          break;
         default:
           break;
       }
@@ -741,6 +744,14 @@ DocRef::DocRef(DocParser *parser,DocNodeVariant *parent,const QCString &target,c
     else if (secLevel==SectionType::Table)
     {
       m_refType = Table;
+    }
+    else if (secLevel==SectionType::Requirement)
+    {
+      m_refType = Requirement;
+      if (!Config_getBool(GENERATE_REQUIREMENTS))
+      {
+        m_file.clear(); // prevent link when there is no requirements page
+      }
     }
     else
     {
@@ -3272,8 +3283,9 @@ Token DocParamList::parse(const QCString &cmdName)
       parser()->context.hasReturnCommand=TRUE;
       parser()->checkRetvalName();
     }
-    //m_params.append(parser()->context.token->name);
-    parser()->handleLinkedWord(thisVariant(),m_params);
+    parser()->context.inSeeBlock=true;
+    parser()->handleLinkedWord(thisVariant(),m_params,true);
+    parser()->context.inSeeBlock=false;
     tok=parser()->tokenizer.lex();
   }
   parser()->tokenizer.setStatePara();
@@ -4733,14 +4745,10 @@ Token DocPara::handleCommand(char cmdChar, const QCString &cmdName)
       retval = handleParamSection(cmdName,DocParamSect::TemplateParam,FALSE,parser()->context.token->paramDir);
       break;
     case CommandType::CMD_RETVAL:
-      parser()->context.inSeeBlock=true;
       retval = handleParamSection(cmdName,DocParamSect::RetVal);
-      parser()->context.inSeeBlock=false;
       break;
     case CommandType::CMD_EXCEPTION:
-      parser()->context.inSeeBlock=true;
       retval = handleParamSection(cmdName,DocParamSect::Exception);
-      parser()->context.inSeeBlock=false;
       break;
     case CommandType::CMD_XREFITEM:
       retval = handleXRefItem();

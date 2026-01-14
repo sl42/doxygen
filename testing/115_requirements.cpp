@@ -1,5 +1,7 @@
 // objective: test the @requirement, @satisfies and @verifies commands
 // check: requirement__r_e_q-001.xml
+// check: class_user_manager.xml
+// check: class_test_user_authentication.xml
 
 /** @requirement REQ-001 User Authentication
  *  The system shall provide a secure authentication mechanism for user login.
@@ -20,7 +22,14 @@
  *
  * @satisfies REQ-001 Implements the core authentication mechanism
  */
-class UserManager {};
+class UserManager
+{
+  public:
+    /** Check access
+     *  @satisfies REQ-001 User access check.
+     */
+    void check_access(std::string &user_id);
+};
 
 /**
  * @brief Test suite for user authentication functionality.

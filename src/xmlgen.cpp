@@ -73,6 +73,11 @@ inline void writeXMLString(TextStream &t,const QCString &s)
   t << convertToXML(s);
 }
 
+inline QCString xmlRequirementId(const QCString &reqId)
+{
+  return convertNameToFile("requirement_"+reqId,false,true);
+}
+
 inline void writeXMLCodeString(bool hide,TextStream &t,const QCString &str, size_t &col, size_t stripIndentAmount)
 {
   if (str.isEmpty()) return;
@@ -514,33 +519,6 @@ static void writeMemberReference(TextStream &t,const Definition *def,const Membe
 
 }
 
-// removes anonymous markers like '@1' from s.
-// examples '@3::A' -> '::A', 'A::@2::B' -> 'A::B', '@A' -> '@A'
-static void stripAnonymousMarkers(QCString &s)
-{
-  auto isDigit = [](char c) { return c>='0' && c<='9'; };
-  int len = static_cast<int>(s.length());
-  int i=0,j=0;
-  if (len>0)
-  {
-    while (i<len)
-    {
-      if (i<len-1 && s[i]=='@' && isDigit(s[i+1])) // found pattern '@\d+'
-      {
-        if (j>=2 && i>=2 && s[i-2]==':' && s[i-1]==':') j-=2; // found pattern '::@\d+'
-        i+=2;                               // skip over @ and first digit
-        while (i<len && isDigit(s[i])) i++; // skip additional digits
-      }
-      else // copy characters
-      {
-        s[j++]=s[i++];
-      }
-    }
-    // resize resulting string
-    s.resize(j);
-  }
-}
-
 static void stripQualifiers(QCString &typeStr)
 {
   bool done=false;
@@ -667,6 +645,28 @@ static QCString extractNoExcept(QCString &argsStr)
   return expr;
 }
 
+static void writeRequirementRefs(const Definition *d,TextStream &t,const char *prefix="")
+{
+  auto writeRefsForType = [&t,&prefix](const RequirementRefs &refs,const char *tagName)
+  {
+    if (!refs.empty())
+    {
+      t << prefix << "    <" << tagName << ">\n";
+      for (const auto &ref : refs)
+      {
+        t << prefix << "      <requirement refid=\"" << xmlRequirementId(ref.reqId()) << "\">"
+          << convertToXML(ref.title()) << "</requirement>\n";
+      }
+      t << prefix << "    </" << tagName << ">\n";
+    }
+  };
+  RequirementRefs satisfiesRefs;
+  RequirementRefs verifiesRefs;
+  splitRequirementRefs(d->requirementReferences(),satisfiesRefs,verifiesRefs);
+  writeRefsForType(satisfiesRefs,"satisfies");
+  writeRefsForType(verifiesRefs,"verifies");
+}
+
 
 static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &t,const Definition *def)
 {
@@ -721,7 +721,6 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
   defStr.stripPrefix("constexpr ");
   defStr.stripPrefix("consteval ");
   defStr.stripPrefix("constinit ");
-  stripAnonymousMarkers(typeStr);
   stripQualifiers(typeStr);
   if (typeStr=="auto")
   {
@@ -759,7 +758,6 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
   }
   QCString noExceptExpr = extractNoExcept(argsStr);
 
-  stripAnonymousMarkers(nameStr);
   ti << "    <member refid=\"" << memberOutputFileBase(md)
      << "_1" << md->anchor() << "\" kind=\"" << memType << "\"><name>"
      << convertToXML(nameStr) << "</name></member>\n";
@@ -1021,7 +1019,6 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
     {
       defStr+=" = "+md->initializer();
     }
-    stripAnonymousMarkers(defStr);
     t << "        <definition>" << convertToXML(defStr) << "</definition>\n";
     t << "        <argsstring>" << convertToXML(argsStr) << "</argsstring>\n";
   }
@@ -1034,7 +1031,6 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
   }
 
   QCString qualifiedNameStr = md->qualifiedName();
-  stripAnonymousMarkers(qualifiedNameStr);
   t << "        <name>" << convertToXML(nameStr) << "</name>\n";
   if (nameStr!=qualifiedNameStr)
   {
@@ -1190,6 +1186,7 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
     linkifyText(TextGeneratorXMLImpl(t),def,md->getBodyDef(),md,md->excpString());
     t << "</exceptions>\n";
   }
+  writeRequirementRefs(md,t,"    ");
 
   if (md->memberType()==MemberType::Enumeration) // enum
   {
@@ -1530,7 +1527,6 @@ static void generateXMLForClass(const ClassDef *cd,TextStream &ti)
   t << "\">\n";
   t << "    <compoundname>";
   QCString nameStr = cd->name();
-  stripAnonymousMarkers(nameStr);
   writeXMLString(t,nameStr);
   t << "</compoundname>\n";
   for (const auto &bcd : cd->baseClasses())
@@ -1623,6 +1619,7 @@ static void generateXMLForClass(const ClassDef *cd,TextStream &ti)
     collaborationGraph.writeXML(t);
     t << "    </collaborationgraph>\n";
   }
+  writeRequirementRefs(cd,t);
   t << "    <location file=\""
     << convertToXML(stripFromPath(cd->getDefFileName())) << "\" line=\""
     << cd->getDefLine() << "\"" << " column=\""
@@ -1667,7 +1664,6 @@ static void generateXMLForConcept(const ConceptDef *cd,TextStream &ti)
     << "\" kind=\"concept\">\n";
   t << "    <compoundname>";
   QCString nameStr = cd->name();
-  stripAnonymousMarkers(nameStr);
   writeXMLString(t,nameStr);
   t << "</compoundname>\n";
   writeIncludeInfo(cd->includeInfo(),t);
@@ -1711,6 +1707,7 @@ static void generateXMLForConcept(const ConceptDef *cd,TextStream &ti)
   t << "    <detaileddescription>\n";
   writeXMLDocBlock(t,cd->docFile(),cd->docLine(),cd,nullptr,cd->documentation());
   t << "    </detaileddescription>\n";
+  writeRequirementRefs(cd,t);
   t << "    <location file=\""
     << convertToXML(stripFromPath(cd->getDefFileName())) << "\" line=\""
     << cd->getDefLine() << "\"" << " column=\""
@@ -1765,6 +1762,7 @@ static void generateXMLForModule(const ModuleDef *mod,TextStream &ti)
   writeXMLDocBlock(t,mod->docFile(),mod->docLine(),mod,nullptr,mod->documentation());
   t << "    </detaileddescription>\n";
   writeExports(mod->getExports(),t);
+  writeRequirementRefs(mod,t);
   t << "    <location file=\""
     << convertToXML(stripFromPath(mod->getDefFileName())) << "\" line=\""
     << mod->getDefLine() << "\"" << " column=\""
@@ -1811,7 +1809,6 @@ static void generateXMLForNamespace(const NamespaceDef *nd,TextStream &ti)
     << langToString(nd->getLanguage()) << "\">\n";
   t << "    <compoundname>";
   QCString nameStr = nd->name();
-  stripAnonymousMarkers(nameStr);
   writeXMLString(t,nameStr);
   t << "</compoundname>\n";
 
@@ -1839,6 +1836,7 @@ static void generateXMLForNamespace(const NamespaceDef *nd,TextStream &ti)
   t << "    <detaileddescription>\n";
   writeXMLDocBlock(t,nd->docFile(),nd->docLine(),nd,nullptr,nd->documentation());
   t << "    </detaileddescription>\n";
+  writeRequirementRefs(nd,t);
   t << "    <location file=\""
     << convertToXML(stripFromPath(nd->getDefFileName())) << "\" line=\""
     << nd->getDefLine() << "\"" << " column=\""
@@ -1957,6 +1955,7 @@ static void generateXMLForFile(FileDef *fd,TextStream &ti)
   {
     writeXMLCodeBlock(t,fd);
   }
+  writeRequirementRefs(fd,t);
   t << "    <location file=\"" << convertToXML(stripFromPath(fd->getDefFileName())) << "\"/>\n";
   t << "  </compounddef>\n";
   t << "</doxygen>\n";
@@ -2027,6 +2026,7 @@ static void generateXMLForGroup(const GroupDef *gd,TextStream &ti)
   t << "    <detaileddescription>\n";
   writeXMLDocBlock(t,gd->docFile(),gd->docLine(),gd,nullptr,gd->documentation());
   t << "    </detaileddescription>\n";
+  writeRequirementRefs(gd,t);
   t << "  </compounddef>\n";
   t << "</doxygen>\n";
 
@@ -2064,6 +2064,7 @@ static void generateXMLForDir(DirDef *dd,TextStream &ti)
   t << "    <detaileddescription>\n";
   writeXMLDocBlock(t,dd->docFile(),dd->docLine(),dd,nullptr,dd->documentation());
   t << "    </detaileddescription>\n";
+  writeRequirementRefs(dd,t);
   t << "    <location file=\"" << convertToXML(stripFromPath(dd->name())) << "\"/>\n";
   t << "  </compounddef>\n";
   t << "</doxygen>\n";
@@ -2227,6 +2228,7 @@ static void generateXMLForPage(PageDef *pd,TextStream &ti,bool isExample)
         pd->documentation());
   }
   t << "    </detaileddescription>\n";
+  writeRequirementRefs(pd,t);
 
   t << "    <location file=\"" << convertToXML(stripFromPath(pd->getDefFileName())) << "\"/>\n";
 
@@ -2238,7 +2240,7 @@ static void generateXMLForPage(PageDef *pd,TextStream &ti,bool isExample)
 
 static void generateXMLForRequirement(const RequirementIntf *req,TextStream &ti)
 {
-  QCString pageName = convertNameToFile("requirement_"+req->id(),false,true);
+  QCString pageName = xmlRequirementId(req->id());
   ti << "  <compound refid=\"" << pageName << "\" kind=\"requirement\"><name>" << convertToXML(req->id()) << "</name>\n";
 
   QCString outputDirectory = Config_getString(XML_OUTPUT);

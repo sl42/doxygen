@@ -1179,19 +1179,8 @@ void DefinitionImpl::writeSourceRefs(OutputList &ol,const QCString &scopeName) c
 
 void DefinitionImpl::writeRequirementRefs(OutputList &ol) const
 {
-  // copy combined references into type specific vectors
-  RequirementRefs satisfiesRefs;
-  RequirementRefs verifiesRefs;
-
-  std::partition_copy(
-      p->requirementRefs.begin(),
-      p->requirementRefs.end(),
-      std::back_inserter(satisfiesRefs),
-      std::back_inserter(verifiesRefs),
-      [](const auto &ref) { return ref.type()==RequirementRefType::Satisfies; }
-     );
-
-  auto writeRefsForType = [&ol](const RequirementRefs &refs,const char *parType,const QCString &text,RequirementRefType filter)
+  if (!Config_getBool(GENERATE_REQUIREMENTS)) return;
+  auto writeRefsForType = [&ol](const RequirementRefs &refs,const char *parType,const QCString &text)
   {
     size_t num = refs.size();
     if (num>0)
@@ -1208,8 +1197,11 @@ void DefinitionImpl::writeRequirementRefs(OutputList &ol) const
     }
   };
 
-  writeRefsForType(satisfiesRefs,"satisfies",theTranslator->trSatisfies(satisfiesRefs.size()==1),RequirementRefType::Satisfies);
-  writeRefsForType(verifiesRefs, "verifies", theTranslator->trVerifies(verifiesRefs.size()==1),  RequirementRefType::Verifies);
+  RequirementRefs satisfiesRefs;
+  RequirementRefs verifiesRefs;
+  splitRequirementRefs(p->requirementRefs,satisfiesRefs,verifiesRefs);
+  writeRefsForType(satisfiesRefs,"satisfies",theTranslator->trSatisfies(satisfiesRefs.size()==1));
+  writeRefsForType(verifiesRefs, "verifies", theTranslator->trVerifies(verifiesRefs.size()==1));
 }
 
 bool DefinitionImpl::hasSourceReffedBy() const
