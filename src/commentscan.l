@@ -62,9 +62,7 @@ typedef yyguts_t *yyscan_t;
 #include "section.h"
 #include "regex.h"
 #include "util.h"
-#include "reflist.h"
 #include "trace.h"
-#include "debug.h"
 #include "stringutil.h"
 
 // forward declarations
@@ -4462,7 +4460,7 @@ static void addXRefItem(yyscan_t yyscanner,
     item->setAnchor(anchorLabel);
     yyextra->current->sli.push_back(item);
     QCString cmdString;
-    cmdString.sprintf(" \\xrefitem %s %d.",qPrint(listName),item->id());
+    cmdString.sprintf("\\ilinebr \\xrefitem %s %d.",qPrint(listName),item->id());
     if (yyextra->inBody)
     {
       yyextra->current->inbodyDocs += cmdString;

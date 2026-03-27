@@ -1304,7 +1304,12 @@ REGEX_w [a-z_A-Z0-9\x80-\xFF]
 <*>\\[ \r\t]*\n                         { g_yyLineNr++; }
 <*>[ \t\r]
 <*>\n                                   { g_yyLineNr++ ; }
-<*>.                                    { ConfigImpl::config_warn("ignoring unknown character '{:c}' at line {}, file {}\n",yytext[0],g_yyLineNr,g_yyFileName); }
+<*>.                                    {
+                                          if (isprint(yytext[0]))
+                                            ConfigImpl::config_warn("ignoring unknown character '{:c}' at line {}, file {}\n",yytext[0],g_yyLineNr,g_yyFileName);
+                                          else
+                                            ConfigImpl::config_warn("ignoring unknown character '0x{:x}' at line {}, file {}\n",yytext[0],g_yyLineNr,g_yyFileName);
+                                        }
 
 %%
 
@@ -1995,6 +2000,8 @@ void Config::checkAndCorrect(bool quiet, const bool check)
     adjustBoolSetting(  depOption, "HTML_DYNAMIC_MENUS",   false  );
     adjustBoolSetting(  depOption, "HTML_DYNAMIC_SECTIONS",false  );
     adjustBoolSetting(  depOption, "HTML_COPY_CLIPBOARD",  false  );
+    adjustBoolSetting(  depOption, "HTML_CODE_FOLDING",    false  );
+    adjustBoolSetting(  depOption, "INTERACTIVE_SVG",      false  );
     adjustStringSetting(depOption, "HTML_FILE_EXTENSION", ".html");
     adjustColorStyleSetting(depOption);
     const StringVector &tagFileList = Config_getList(TAGFILES);

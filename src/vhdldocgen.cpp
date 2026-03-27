@@ -54,13 +54,11 @@
 #include "namespacedef.h"
 #include "filename.h"
 #include "membergroup.h"
-#include "memberdef.h"
 #include "membername.h"
 #include "plantuml.h"
 #include "vhdljjparser.h"
 #include "VhdlParser.h"
 #include "regex.h"
-#include "plantuml.h"
 #include "textstream.h"
 #include "moduledef.h"
 
@@ -1786,7 +1784,7 @@ void VhdlDocGen::writeVHDLDeclarations(const MemberList* ml,OutputList &ol,
       {
         ol.parseText(mg->header());
       }
-      ol.endMemberGroupHeader();
+      ol.endMemberGroupHeader(hasHeader);
       if (!mg->documentation().isEmpty())
       {
         //printf("Member group has docs!\n");

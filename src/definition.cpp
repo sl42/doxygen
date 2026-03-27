@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <mutex>
 #include <unordered_map>
 #include <string>
 #include <optional>
@@ -46,13 +47,22 @@
 #include "namespacedef.h"
 #include "filedef.h"
 #include "dirdef.h"
-#include "pagedef.h"
 #include "reflist.h"
 #include "utf8.h"
 #include "indexlist.h"
 #include "fileinfo.h"
 
 //-----------------------------------------------------------------------------------------
+
+/** once_flag wrapper that is copyable (copy default-initializes the flag) and resettable. */
+struct ResettableOnce
+{
+  mutable std::once_flag flag;
+  ResettableOnce() = default;
+  ResettableOnce(const ResettableOnce &) {} // copy: leave flag in not-yet-called state
+  ResettableOnce &operator=(const ResettableOnce &) { return *this; }
+  void reset() { flag.~once_flag(); new (&flag) std::once_flag{}; }
+};
 
 /** Private data associated with a Symbol DefinitionImpl object. */
 class DefinitionImpl::Private
@@ -82,6 +92,7 @@ class DefinitionImpl::Private
     QCString localName;      // local (unqualified) name of the definition
                              // in the future m_name should become m_localName
     QCString qualifiedName;
+    ResettableOnce qualifiedNameOnce;
     QCString ref;   // reference to external documentation
 
     bool hidden = FALSE;
@@ -1269,47 +1280,28 @@ void DefinitionImpl::addInnerCompound(Definition *)
   err("DefinitionImpl::addInnerCompound() called\n");
 }
 
-static std::recursive_mutex g_qualifiedNameMutex;
-
 QCString DefinitionImpl::qualifiedName() const
 {
-  std::lock_guard<std::recursive_mutex> lock(g_qualifiedNameMutex);
-  if (!p->qualifiedName.isEmpty())
+  std::call_once(p->qualifiedNameOnce.flag, [this]()
   {
-    return p->qualifiedName;
-  }
-
-  //printf("start %s::qualifiedName() localName=%s\n",qPrint(name()),qPrint(p->localName));
-  if (p->outerScope==nullptr)
-  {
-    if (p->localName=="<globalScope>")
+    //printf("start %s::qualifiedName() localName=%s\n",qPrint(name()),qPrint(p->localName));
+    if (p->outerScope==nullptr || p->outerScope->name()=="<globalScope>")
     {
-      return "";
+      p->qualifiedName = (p->localName=="<globalScope>") ? QCString() : p->localName;
     }
     else
     {
-      return p->localName;
+      p->qualifiedName = p->outerScope->qualifiedName()+
+             getLanguageSpecificSeparator(getLanguage())+
+             p->localName;
     }
-  }
-
-  if (p->outerScope->name()=="<globalScope>")
-  {
-    p->qualifiedName = p->localName;
-  }
-  else
-  {
-    p->qualifiedName = p->outerScope->qualifiedName()+
-           getLanguageSpecificSeparator(getLanguage())+
-           p->localName;
-  }
-  //printf("end %s::qualifiedName()=%s\n",qPrint(name()),qPrint(p->qualifiedName));
-  //count--;
+    //printf("end %s::qualifiedName()=%s\n",qPrint(name()),qPrint(p->qualifiedName));
+  });
   return p->qualifiedName;
 }
 
 void DefinitionImpl::setOuterScope(Definition *d)
 {
-  std::lock_guard<std::recursive_mutex> lock(g_qualifiedNameMutex);
   //printf("%s::setOuterScope(%s)\n",qPrint(name()),d?qPrint(d->name()):"<none>");
   Definition *outerScope = p->outerScope;
   bool found=false;
@@ -1322,6 +1314,7 @@ void DefinitionImpl::setOuterScope(Definition *d)
   if (!found)
   {
     p->qualifiedName.clear(); // flush cached scope name
+    p->qualifiedNameOnce.reset();
     p->outerScope = d;
   }
   p->hidden = p->hidden || d->isHidden();

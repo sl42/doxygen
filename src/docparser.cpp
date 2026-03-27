@@ -216,19 +216,23 @@ void DocParser::checkArgumentName()
 	                 context.memberDef->argumentList() :
                          context.memberDef->declArgumentList();
   SrcLangExt lang      = context.memberDef->getLanguage();
+  context.numParameters = static_cast<int>(al.size());
   //printf("isDocsForDefinition()=%d\n",context.memberDef->isDocsForDefinition());
   if (al.empty()) return; // no argument list
 
   static const reg::Ex re(R"(\$?\w+\.*)");
+  static const reg::Ex re_digits(R"(\d+)");
   reg::Iterator it(name,re);
   reg::Iterator end;
   for (; it!=end ; ++it)
   {
     const auto &match = *it;
     QCString aName=match.str();
+    int number = reg::match(aName.view(),re_digits) ? std::atoi(aName.data()) : -1;
     if (lang==SrcLangExt::Fortran) aName=aName.lower();
     //printf("aName='%s'\n",qPrint(aName));
     bool found=FALSE;
+    int position=1;
     for (const Argument &a : al)
     {
       QCString argName = context.memberDef->isDefine() ? a.type : a.name;
@@ -236,12 +240,23 @@ void DocParser::checkArgumentName()
       argName=argName.stripWhiteSpace();
       //printf("argName='%s' aName=%s\n",qPrint(argName),qPrint(aName));
       if (argName.endsWith("...")) argName=argName.left(argName.length()-3);
-      if (aName==argName)
+      bool sameName = aName==argName;
+      bool samePosition = position==number;
+      if (samePosition || sameName) // @param <number> or @param name
       {
+        if (!sameName) // replace positional argument with real name or -
+        {
+          context.token->name = argName.isEmpty() ? "-" : argName;
+        }
 	context.paramsFound.insert(aName.str());
-	found=TRUE;
+	found=true;
 	break;
       }
+      else if (aName==".") // replace . by - in the output
+      {
+        context.token->name = "-";
+      }
+      position++;
     }
     if (!found)
     {
@@ -261,11 +276,32 @@ void DocParser::checkArgumentName()
         docLine = context.memberDef->getDefLine();
       }
       QCString alStr = argListToString(al);
-      warn_doc_error(docFile,docLine,
-	  "argument '{}' of command @param "
-	  "is not found in the argument list of {}{}{}{}",
-	  aName, scope, context.memberDef->name(),
-	  alStr, inheritedFrom);
+      if (number==0)
+      {
+        warn_doc_error(docFile,docLine,
+            "positional argument with value '0' of command @param "
+            "is invalid, first parameter has index '1' for {}{}{}{}",
+            scope, context.memberDef->name(),
+            alStr, inheritedFrom);
+        context.token->name = "-";
+      }
+      else if (number>0)
+      {
+        warn_doc_error(docFile,docLine,
+            "positional argument '{}' of command @param "
+            "is larger than the number of parameters ({}) for {}{}{}{}",
+            number, al.size(), scope, context.memberDef->name(),
+            alStr, inheritedFrom);
+        context.token->name = "-";
+      }
+      else
+      {
+        warn_doc_error(docFile,docLine,
+            "argument '{}' of command @param "
+            "is not found in the argument list of {}{}{}{}",
+            aName, scope, context.memberDef->name(),
+            alStr, inheritedFrom);
+      }
     }
   }
 }
@@ -304,6 +340,7 @@ void DocParser::checkUnOrMultipleDocumentedParams()
     if (!al.empty())
     {
       ArgumentList undocParams;
+      int position = 1;
       for (const Argument &a: al)
       {
         QCString argName = context.memberDef->isDefine() ? a.type : a.name;
@@ -321,12 +358,20 @@ void DocParser::checkUnOrMultipleDocumentedParams()
         }
         else if (!argName.isEmpty())
         {
-          size_t count = context.paramsFound.count(argName.str());
-          if (count==0 && a.docs.isEmpty())
+          size_t count_named      = context.paramsFound.count(argName.str());
+          size_t count_positional = context.paramsFound.count(std::to_string(position));
+          if (count_named==0 && count_positional==0 && a.docs.isEmpty())
           {
             undocParams.push_back(a);
           }
-          else if (count>1 && Config_getBool(WARN_IF_DOC_ERROR))
+          else if (count_named==1 && count_positional==1 && Config_getBool(WARN_IF_DOC_ERROR))
+          {
+            warn_doc_error(context.memberDef->docFile(),
+                           context.memberDef->docLine(),
+                           "argument {} from the argument list of {} has both named and positional @param documentation sections",
+                           aName, context.memberDef->qualifiedName());
+          }
+          else if (count_named+count_positional>1 && Config_getBool(WARN_IF_DOC_ERROR))
           {
             warn_doc_error(context.memberDef->docFile(),
                            context.memberDef->docLine(),
@@ -334,6 +379,7 @@ void DocParser::checkUnOrMultipleDocumentedParams()
                            aName, context.memberDef->qualifiedName());
           }
         }
+        position++;
       }
       if (!undocParams.empty() && Config_getBool(WARN_IF_INCOMPLETE_DOC))
       {
@@ -354,6 +400,14 @@ void DocParser::checkUnOrMultipleDocumentedParams()
           errMsg+="  parameter '"+argName+"'";
         }
         warn_incomplete_doc(context.memberDef->docFile(), context.memberDef->docLine(), "{}", errMsg);
+      }
+
+      if (Config_getBool(WARN_IF_DOC_ERROR) && context.paramPosition-1 > context.numParameters)
+      {
+        warn_doc_error(context.memberDef->docFile(),
+                       context.memberDef->docLine(),
+                       "too many @param commands for function {}. Found {} while function has {} parameter{}",
+                       context.memberDef->qualifiedName(), context.paramPosition-1, context.numParameters, context.numParameters!=1?"s":"");
       }
     }
     else
@@ -792,7 +846,7 @@ void DocParser::handleLinkedWord(DocNodeVariant *parent,DocNodeList &children,bo
   };
   QCString name = linkToText(context.lang,context.token->name,TRUE);
   AUTO_TRACE("word={}",name);
-  if ((!context.autolinkSupport && !ignoreAutoLinkFlag) || ignoreWord(context.token->name)) // no autolinking -> add as normal word
+  if (!context.autolinkSupport || ignoreAutoLinkFlag || ignoreWord(context.token->name)) // no autolinking -> add as normal word
   {
     children.append<DocWord>(this,parent,name);
     return;
@@ -1216,6 +1270,34 @@ void DocParser::handleImage(DocNodeVariant *parent, DocNodeList &children)
   children.append<DocImage>(this,parent,attrList,
                  findAndCopyImage(context.token->name,t),t,"",inlineImage);
   children.get_last<DocImage>()->parse();
+}
+
+void DocParser::handleRef(DocNodeVariant *parent, DocNodeList &children, char cmdChar, const QCString &cmdName)
+{
+  AUTO_TRACE("cmdName={}",cmdName);
+  QCString saveCmdName = cmdName;
+  tokenizer.pushState();
+  Token tok=tokenizer.lex();
+  if (!tok.is(TokenRetval::TK_WHITESPACE))
+  {
+    warn_doc_error(context.fileName,tokenizer.getLineNr(),"expected whitespace after '{:c}{}' command",
+      cmdChar,qPrint(saveCmdName));
+    goto endref;
+  }
+  tokenizer.setStateRef();
+  tok=tokenizer.lex(); // get the reference id
+  if (!tok.is(TokenRetval::TK_WORD))
+  {
+    warn_doc_error(context.fileName,tokenizer.getLineNr(),"unexpected token {} as the argument of '{:c}{}'",
+        tok.to_string(),cmdChar,saveCmdName);
+    goto endref;
+  }
+  children.append<DocRef>(this,parent,
+                            context.token->name,
+                            context.context);
+  children.get_last<DocRef>()->parse(cmdChar,saveCmdName);
+endref:
+  tokenizer.popState();
 }
 
 void DocParser::handleIFile(char cmdChar,const QCString &cmdName)
@@ -1714,7 +1796,8 @@ void DocParser::readTextFileByName(const QCString &file,QCString &text)
   QCString filePath = findFilePath(file,ambig);
   if (!filePath.isEmpty())
   {
-    text = fileToString(filePath,Config_getBool(FILTER_SOURCE_FILES));
+    size_t indent = 0;
+    text = detab(fileToString(filePath,Config_getBool(FILTER_SOURCE_FILES)),indent);
     if (ambig)
     {
       warn_doc_error(context.fileName,tokenizer.getLineNr(),"included file name '{}' is ambiguous"
@@ -2067,6 +2150,16 @@ IDocNodeASTPtr validatingParseDoc(IDocParser &parserIntf,
   parser->context.paramsFound.clear();
   parser->context.markdownSupport = options.markdownSupport();
   parser->context.autolinkSupport = options.autolinkSupport();
+  if (md)
+  {
+    const ArgumentList &al=md->isDocsForDefinition() ? md->argumentList() : md->declArgumentList();
+    parser->context.numParameters = static_cast<int>(al.size());
+  }
+  else
+  {
+    parser->context.numParameters = 0;
+  }
+  parser->context.paramPosition = 1;
 
   //printf("Starting comment block at %s:%d\n",qPrint(parser->context.fileName),startLine);
   parser->tokenizer.setFileName(fileName);

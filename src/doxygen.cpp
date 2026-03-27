@@ -164,8 +164,6 @@ bool                  Doxygen::parseSourcesNeeded = FALSE;
 SearchIndexIntf       Doxygen::searchIndex;
 SymbolMap<Definition>*Doxygen::symbolMap;
 ClangUsrMap          *Doxygen::clangUsrMap = nullptr;
-Cache<std::string,LookupInfo> *Doxygen::typeLookupCache;
-Cache<std::string,LookupInfo> *Doxygen::symbolLookupCache;
 DirLinkedMap         *Doxygen::dirLinkedMap;
 DirRelationLinkedMap  Doxygen::dirRelations;
 ParserManager        *Doxygen::parserManager = nullptr;
@@ -2504,7 +2502,14 @@ static MemberDef *addVariableToClass(
     {
       if (root->spec.isAlias()) // turn 'typedef B A' into 'using A'
       {
-        def="using "+name;
+        if (lang==SrcLangExt::Python)
+        {
+          def="type "+name+args;
+        }
+        else
+        {
+          def="using "+name;
+        }
       }
       else
       {
@@ -2515,7 +2520,14 @@ static MemberDef *addVariableToClass(
     {
       if (root->spec.isAlias()) // turn 'typedef B C::A' into 'using C::A'
       {
-        def="using "+qualScope+scopeSeparator+name;
+        if (lang==SrcLangExt::Python)
+        {
+          def="type "+qualScope+scopeSeparator+name+args;
+        }
+        else
+        {
+          def="using "+qualScope+scopeSeparator+name;
+        }
       }
       else
       {
@@ -2699,7 +2711,14 @@ static MemberDef *addVariableToFile(
     {
       if (root->spec.isAlias()) // turn 'typedef B NS::A' into 'using NS::A'
       {
-        def="using "+nd->name()+sep+name;
+        if (lang==SrcLangExt::Python)
+        {
+          def="type "+nd->name()+sep+name+args;
+        }
+        else
+        {
+          def="using "+nd->name()+sep+name;
+        }
       }
       else // normal member
       {
@@ -2723,7 +2742,14 @@ static MemberDef *addVariableToFile(
       {
         if (root->spec.isAlias()) // turn 'typedef B A' into 'using A'
         {
-          def="using "+root->name;
+          if (root->lang==SrcLangExt::Python)
+          {
+            def="type "+root->name+args;
+          }
+          else
+          {
+            def="using "+root->name;
+          }
         }
         else // normal member
         {
@@ -3228,6 +3254,7 @@ static void addVariable(const Entry *root,int isFuncPtr=-1)
     }
   }
 
+  QCString type_s = type;
   type=type.stripWhiteSpace();
   ClassDefMutable *cd=nullptr;
   bool isRelated=FALSE;
@@ -3301,9 +3328,9 @@ static void addVariable(const Entry *root,int isFuncPtr=-1)
   MemberType mtype = MemberType::Variable;
   if (type=="@")
     mtype=MemberType::EnumValue;
-  else if (type.startsWith("typedef "))
+  else if (type_s.startsWith("typedef "))
     mtype=MemberType::Typedef;
-  else if (type.startsWith("friend "))
+  else if (type_s.startsWith("friend "))
     mtype=MemberType::Friend;
   else if (root->mtype==MethodTypes::Property)
     mtype=MemberType::Property;
@@ -3885,7 +3912,7 @@ static void addGlobalFunction(const Entry *root,const QCString &rname,const QCSt
     scope+=sep;
   }
 
-  if (Config_getBool(HIDE_SCOPE_NAMES)) scope = "";
+  if (Config_getBool(HIDE_SCOPE_NAMES) || root->lang==SrcLangExt::Python) scope = "";
   QCString def;
   //QCString optArgs = root->argList.empty() ? QCString() : root->args;
   if (!root->type.isEmpty())
@@ -5925,6 +5952,7 @@ static bool findGlobalMember(const Entry *root,
         {
           //printf("Comparing return types '%s'<->'%s'\n",
           //    md->typeString(),type);
+          //printf("%s: Comparing '%s'<=>'%s'\n",qPrint(md->name()),qPrint(md->requiresClause()),qPrint(root->req));
           if (md->templateArguments().size()!=root->tArgLists.back().size() ||
               md->typeString()!=type ||
               md->requiresClause()!=root->req)
@@ -6940,7 +6968,7 @@ static void findMember(const Entry *root,
 
   //printf("scopeName='%s' className='%s'\n",qPrint(scopeName),qPrint(className));
   // rebuild the function declaration (needed to get the scope right).
-  if (!scopeName.isEmpty() && !isRelated && !isFriend && !Config_getBool(HIDE_SCOPE_NAMES))
+  if (!scopeName.isEmpty() && !isRelated && !isFriend && !Config_getBool(HIDE_SCOPE_NAMES) && root->lang!=SrcLangExt::Python)
   {
     if (!funcType.isEmpty())
     {
@@ -7667,7 +7695,7 @@ static void findEnums(const Entry *root)
 
       if (nd)
       {
-        if (isRelated || Config_getBool(HIDE_SCOPE_NAMES))
+        if (isRelated || Config_getBool(HIDE_SCOPE_NAMES) || root->lang==SrcLangExt::Python)
         {
           mmd->setDefinition(name+baseType);
         }
@@ -7699,7 +7727,7 @@ static void findEnums(const Entry *root)
       }
       else if (cd)
       {
-        if (isRelated || Config_getBool(HIDE_SCOPE_NAMES))
+        if (isRelated || Config_getBool(HIDE_SCOPE_NAMES) || root->lang==SrcLangExt::Python)
         {
           mmd->setDefinition(name+baseType);
         }
@@ -9489,19 +9517,7 @@ static void flushCachedTemplateRelations()
   // as there can be new template instances in the inheritance path
   // to this class. Optimization: only remove those classes that
   // have inheritance instances as direct or indirect sub classes.
-  StringVector elementsToRemove;
-  for (const auto &ci : *Doxygen::typeLookupCache)
-  {
-    const LookupInfo &li = ci.second;
-    if (li.definition)
-    {
-      elementsToRemove.push_back(ci.first);
-    }
-  }
-  for (const auto &k : elementsToRemove)
-  {
-    Doxygen::typeLookupCache->remove(k);
-  }
+  SymbolResolver::clearTypeLookupCache(SymbolResolver::ClearScope::Classes);
 
   // remove all cached typedef resolutions whose target is a
   // template class as this may now be a template instance
@@ -9554,34 +9570,8 @@ static void flushUnresolvedRelations()
   // class A { class I {} };
   // class B : public A {};
   // class C : public B::I {};
+  SymbolResolver::clearTypeLookupCache(SymbolResolver::ClearScope::Unresolved);
 
-  StringVector elementsToRemove;
-  for (const auto &ci : *Doxygen::typeLookupCache)
-  {
-    const LookupInfo &li = ci.second;
-    if (li.definition==nullptr && li.typeDef==nullptr)
-    {
-      elementsToRemove.push_back(ci.first);
-    }
-  }
-  for (const auto &k : elementsToRemove)
-  {
-    Doxygen::typeLookupCache->remove(k);
-  }
-
-  // for each global function name
-  for (const auto &fn : *Doxygen::functionNameLinkedMap)
-  {
-    // for each function with that name
-    for (const auto &ifmd : *fn)
-    {
-      MemberDefMutable *fmd = toMemberDefMutable(ifmd.get());
-      if (fmd)
-      {
-        fmd->invalidateCachedArgumentTypes();
-      }
-    }
-  }
   // for each class method name
   for (const auto &nm : *Doxygen::memberNameLinkedMap)
   {
@@ -11485,7 +11475,7 @@ static void usage(const QCString &name,const QCString &versionString)
       "    If - is used for layoutFileName Doxygen will write to standard output.\n\n"
       "5) Use Doxygen to generate a template style sheet file for RTF, HTML or Latex.\n"
       "    RTF:        {1} -w rtf styleSheetFile\n"
-      "    HTML:       {1}-w html headerFile footerFile styleSheetFile [configFile]\n"
+      "    HTML:       {1} -w html headerFile footerFile styleSheetFile [configFile]\n"
       "    LaTeX:      {1} -w latex headerFile footerFile styleSheetFile [configFile]\n\n"
       "6) Use Doxygen to generate a rtf extensions file\n"
       "    {1} -e rtf extensionsFile\n\n"
@@ -11637,22 +11627,6 @@ void cleanUpDoxygen()
   delete Doxygen::namespaceLinkedMap;
   delete Doxygen::dirLinkedMap;
   delete Doxygen::symbolMap;
-}
-
-static int computeIdealCacheParam(size_t v)
-{
-  //printf("computeIdealCacheParam(v=%u)\n",v);
-
-  int r=0;
-  while (v!=0)
-  {
-    v >>= 1;
-    r++;
-  }
-  // r = log2(v)
-
-  // convert to a valid cache size value
-  return std::max(0,std::min(r-16,9));
 }
 
 void readConfiguration(int argc, char **argv)
@@ -12643,14 +12617,6 @@ void parseInput()
    *            Initialize global lists and dictionaries
    **************************************************************************/
 
-  // also scale lookup cache with SYMBOL_CACHE_SIZE
-  int cacheSize = Config_getInt(LOOKUP_CACHE_SIZE);
-  if (cacheSize<0) cacheSize=0;
-  if (cacheSize>9) cacheSize=9;
-  uint32_t lookupSize = 65536 << cacheSize;
-  Doxygen::typeLookupCache = new Cache<std::string,LookupInfo>(lookupSize);
-  Doxygen::symbolLookupCache = new Cache<std::string,LookupInfo>(lookupSize);
-
 #ifdef HAS_SIGNALS
   signal(SIGINT, stopDoxygen);
 #endif
@@ -12935,7 +12901,7 @@ void parseInput()
   // calling buildClassList may result in cached relations that
   // become invalid after resolveClassNestingRelations(), that's why
   // we need to clear the cache here
-  Doxygen::typeLookupCache->clear();
+  SymbolResolver::clearTypeLookupCache(SymbolResolver::ClearScope::All);
   // we don't need the list of using declaration anymore
   g_usingDeclarations.clear();
 
@@ -13575,23 +13541,7 @@ void generateOutput()
   g_outputList->cleanup();
   cleanupInlineGraph();
 
-  msg("type lookup cache used {}/{} hits={} misses={}\n",
-      Doxygen::typeLookupCache->size(),
-      Doxygen::typeLookupCache->capacity(),
-      Doxygen::typeLookupCache->hits(),
-      Doxygen::typeLookupCache->misses());
-  msg("symbol lookup cache used {}/{} hits={} misses={}\n",
-      Doxygen::symbolLookupCache->size(),
-      Doxygen::symbolLookupCache->capacity(),
-      Doxygen::symbolLookupCache->hits(),
-      Doxygen::symbolLookupCache->misses());
-  int typeCacheParam   = computeIdealCacheParam(static_cast<size_t>(Doxygen::typeLookupCache->misses()*2/3)); // part of the cache is flushed, hence the 2/3 correction factor
-  int symbolCacheParam = computeIdealCacheParam(static_cast<size_t>(Doxygen::symbolLookupCache->misses()));
-  int cacheParam = std::max(typeCacheParam,symbolCacheParam);
-  if (cacheParam>Config_getInt(LOOKUP_CACHE_SIZE))
-  {
-    msg("Note: based on cache misses the ideal setting for LOOKUP_CACHE_SIZE is {} at the cost of higher memory usage.\n",cacheParam);
-  }
+  SymbolResolver::showCacheUsage();
 
   if (Debug::isFlagSet(Debug::Time))
   {

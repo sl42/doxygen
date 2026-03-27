@@ -49,7 +49,6 @@
 #include "dir.h"
 #include "utf8.h"
 #include "portable.h"
-#include "outputlist.h"
 #include "moduledef.h"
 #include "requirement.h"
 
@@ -380,6 +379,8 @@ static void writeTemplateArgumentList(TextStream &t,
 {
   QCString indentStr;
   indentStr.fill(' ',indent);
+  LinkifyTextOptions options;
+  options.setScope(scope).setFileScope(fileScope);
   if (al.hasParameters())
   {
     t << indentStr << "<templateparamlist>\n";
@@ -389,7 +390,7 @@ static void writeTemplateArgumentList(TextStream &t,
       if (!a.type.isEmpty())
       {
         t << indentStr <<  "    <type>";
-        linkifyText(TextGeneratorXMLImpl(t),scope,fileScope,nullptr,a.type);
+        linkifyText(TextGeneratorXMLImpl(t),a.type,options);
         t << "</type>\n";
       }
       if (!a.name.isEmpty())
@@ -400,13 +401,13 @@ static void writeTemplateArgumentList(TextStream &t,
       if (!a.defval.isEmpty())
       {
         t << indentStr << "    <defval>";
-        linkifyText(TextGeneratorXMLImpl(t),scope,fileScope,nullptr,a.defval);
+        linkifyText(TextGeneratorXMLImpl(t),a.defval,options);
         t << "</defval>\n";
       }
       if (!a.typeConstraint.isEmpty())
       {
         t << indentStr << "    <typeconstraint>";
-        linkifyText(TextGeneratorXMLImpl(t),scope,fileScope,nullptr,a.typeConstraint);
+        linkifyText(TextGeneratorXMLImpl(t),a.typeConstraint,options);
         t << "</typeconstraint>\n";
       }
       if (a.hasTemplateDocumentation())
@@ -688,6 +689,9 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
   // enum values are written as part of the enum
   if (md->memberType()==MemberType::EnumValue) return;
   if (md->isHidden()) return;
+
+  LinkifyTextOptions options;
+  options.setScope(def).setFileScope(md->getBodyDef()).setSelf(md);
 
   // group members are only visible in their group
   bool groupMember = md->getGroupDef() && def->definitionType()!=Definition::TypeGroup;
@@ -1013,7 +1017,7 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
   {
     writeMemberTemplateLists(md,t);
     t << "        <type>";
-    linkifyText(TextGeneratorXMLImpl(t),def,md->getBodyDef(),md,typeStr);
+    linkifyText(TextGeneratorXMLImpl(t),typeStr,options);
     t << "</type>\n";
     if (md->isTypeAlias())
     {
@@ -1026,7 +1030,7 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
   if (md->memberType() == MemberType::Enumeration)
   {
     t << "        <type>";
-    linkifyText(TextGeneratorXMLImpl(t),def,md->getBodyDef(),md,md->enumBaseType());
+    linkifyText(TextGeneratorXMLImpl(t),md->enumBaseType(),options);
     t << "</type>\n";
   }
 
@@ -1075,7 +1079,7 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
   {
     t << "        <param>\n";
     t << "          <type>";
-    linkifyText(TextGeneratorXMLImpl(t),def,md->getBodyDef(),md,nameStr);
+    linkifyText(TextGeneratorXMLImpl(t),nameStr,options);
     t << "</type>\n";
     t << "        </param>\n";
   }
@@ -1106,13 +1110,13 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
         if (isFortran && defArg && !defArg->type.isEmpty())
         {
           t << "          <type>";
-          linkifyText(TextGeneratorXMLImpl(t),def,md->getBodyDef(),md,defArg->type);
+          linkifyText(TextGeneratorXMLImpl(t),defArg->type,options);
           t << "</type>\n";
         }
         else if (!a.type.isEmpty())
         {
           t << "          <type>";
-          linkifyText(TextGeneratorXMLImpl(t),def,md->getBodyDef(),md,a.type);
+          linkifyText(TextGeneratorXMLImpl(t),a.type,options);
           t << "</type>\n";
         }
         if (!a.name.isEmpty())
@@ -1136,7 +1140,7 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
         if (!a.defval.isEmpty())
         {
           t << "          <defval>";
-          linkifyText(TextGeneratorXMLImpl(t),def,md->getBodyDef(),md,a.defval);
+          linkifyText(TextGeneratorXMLImpl(t),a.defval,options);
           t << "</defval>\n";
         }
         if (defArg && defArg->hasDocumentation())
@@ -1169,21 +1173,21 @@ static void generateXMLForMember(const MemberDef *md,TextStream &ti,TextStream &
   if (!md->requiresClause().isEmpty())
   {
     t << "    <requiresclause>";
-    linkifyText(TextGeneratorXMLImpl(t),md,md->getFileDef(),md,md->requiresClause());
+    linkifyText(TextGeneratorXMLImpl(t),md->requiresClause(),options);
     t << "    </requiresclause>\n";
   }
 
   if (!md->isTypeAlias() && (md->hasOneLineInitializer() || md->hasMultiLineInitializer()))
   {
     t << "        <initializer>";
-    linkifyText(TextGeneratorXMLImpl(t),def,md->getBodyDef(),md,md->initializer());
+    linkifyText(TextGeneratorXMLImpl(t),md->initializer(),options);
     t << "</initializer>\n";
   }
 
   if (!md->excpString().isEmpty())
   {
     t << "        <exceptions>";
-    linkifyText(TextGeneratorXMLImpl(t),def,md->getBodyDef(),md,md->excpString());
+    linkifyText(TextGeneratorXMLImpl(t),md->excpString(),options);
     t << "</exceptions>\n";
   }
   writeRequirementRefs(md,t,"    ");
@@ -1587,10 +1591,13 @@ static void generateXMLForClass(const ClassDef *cd,TextStream &ti)
     }
   }
 
+  LinkifyTextOptions options;
+  options.setScope(cd).setFileScope(cd->getFileDef());
+
   if (!cd->requiresClause().isEmpty())
   {
     t << "    <requiresclause>";
-    linkifyText(TextGeneratorXMLImpl(t),cd,cd->getFileDef(),nullptr,cd->requiresClause());
+    linkifyText(TextGeneratorXMLImpl(t),cd->requiresClause(),options);
     t << "    </requiresclause>\n";
   }
 
@@ -1650,6 +1657,8 @@ static void generateXMLForConcept(const ConceptDef *cd,TextStream &ti)
      << "\" kind=\"concept\"" << "><name>"
      << convertToXML(cd->name()) << "</name>\n";
 
+  LinkifyTextOptions options;
+  options.setScope(cd).setFileScope(cd->getFileDef());
   QCString outputDirectory = Config_getString(XML_OUTPUT);
   QCString fileName=outputDirectory+"/"+cd->getOutputFileBase()+".xml";
   std::ofstream f = Portable::openOutputStream(fileName);
@@ -1669,7 +1678,7 @@ static void generateXMLForConcept(const ConceptDef *cd,TextStream &ti)
   writeIncludeInfo(cd->includeInfo(),t);
   writeTemplateList(cd,t);
   t << "    <initializer>";
-  linkifyText(TextGeneratorXMLImpl(t),cd,cd->getFileDef(),nullptr,cd->initializer());
+  linkifyText(TextGeneratorXMLImpl(t),cd->initializer(),options);
   t << "</initializer>\n";
   auto intf=Doxygen::parserManager->getCodeParser(".cpp");
   intf->resetCodeParserState();
@@ -2072,6 +2081,61 @@ static void generateXMLForDir(DirDef *dd,TextStream &ti)
   ti << "  </compound>\n";
 }
 
+void generateXMLForRequirements(PageDef *pd,TextStream &ti)
+{
+  ti << "  <compound refid=\"requirements\" kind=\"requirements\"><name>" << convertToXML(pd->name()) << "</name>\n";
+  QCString outputDirectory = Config_getString(XML_OUTPUT);
+  QCString fileName = outputDirectory+"/requirements.xml";
+  std::ofstream f = Portable::openOutputStream(fileName);
+  if (!f.is_open())
+  {
+    err("Cannot open file {} for writing!\n",fileName);
+    return;
+  }
+  TextStream t(&f);
+
+  auto writeDefsForReq = [&t](const std::vector<const Definition *> &defs,const char *tagName)
+  {
+    for (const auto &def : defs)
+    {
+      t << "        <" << tagName << " refid=\"";
+      t << def->getOutputFileBase();
+      if (def->definitionType()==Definition::TypeMember)
+      {
+        t << "_1" << def->anchor();
+      }
+      t << "\">";
+      t << convertToXML(def->name());
+      t << "</" << tagName<< ">\n";
+    }
+  };
+
+  writeXMLHeader(t);
+  t << "  <compounddef id=\"requirements\" kind=\"requirements\">\n";
+  t << "    <compoundname>" << convertToXML(pd->name()) << "</compoundname>\n";
+  t << "    <requirementslist>\n";
+  auto reqs = RequirementManager::instance().requirements();
+  for (const auto &req : reqs)
+  {
+      t << "      <requirement refid=\"" << req->id();
+      if (auto tagFile = req->getTagFile(); !tagFile.isEmpty())
+      {
+        t << "\" tagfile=\"" << convertToXML(stripFromPath(tagFile)) << "\" page=\"" << convertToXML(req->getExtPage());
+      }
+      t << "\">\n";
+      t << "        <title>" << convertToXML(filterTitle(convertCharEntitiesToUTF8(req->title()))) << "</title>\n";
+      t << "        <location file=\"" << convertToXML(stripFromPath(req->file())) << "\" line=\"" << req->line() << "\"/>\n" ;
+      writeDefsForReq(req->satisfiedBy(),"satisfiedby");
+      writeDefsForReq(req->verifiedBy(),"verifiedby");
+      t << "      </requirement>\n";
+  }
+  t << "    </requirementslist>\n";
+  t << "  </compounddef>\n";
+  t << "</doxygen>\n";
+
+  ti << "  </compound>\n";
+}
+
 static void generateXMLForPage(PageDef *pd,TextStream &ti,bool isExample)
 {
   // + name
@@ -2094,6 +2158,7 @@ static void generateXMLForPage(PageDef *pd,TextStream &ti,bool isExample)
   }
   else if (pageName=="requirements")
   {
+    generateXMLForRequirements(pd,ti);
     return; // requirements are listed separately
   }
 

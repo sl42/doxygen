@@ -72,7 +72,8 @@ static const StringUnorderedSet g_plantumlEngine {
   "salt", "math", "latex", "gantt", "mindmap",
   "wbs", "yaml", "creole", "json", "flow",
   "board", "git", "hcl", "regex", "ebnf",
-  "files", "chen", "chronology"
+  "files", "chen", "chronology", "chart", "nwdiag",
+  "packetdiag", "project", "sprites"
 };
 
 //---------------------------------------------------------------------------
@@ -1457,6 +1458,12 @@ void DocHtmlSummary::parse()
     {
       break;
     }
+    else if (tok.is_any_of(TokenRetval::TK_COMMAND_AT, TokenRetval::TK_COMMAND_BS) &&
+             (Mappers::cmdMapper->map(parser()->context.token->name)== CommandType::CMD_REF))
+    {
+      parser()->handleRef(thisVariant(),children(),
+                          tok.command_to_char(),parser()->context.token->name);
+    }
     else if (!parser()->defaultHandleToken(thisVariant(),tok,children()))
     {
       parser()->errorHandleDefaultToken(thisVariant(),tok,children(),"summary section");
@@ -1991,7 +1998,7 @@ static Token skipSpacesForTable(DocParser *parser)
         break;
       }
     }
-    else if (tok.is(TokenRetval::TK_COMMAND_AT) || tok.is(TokenRetval::TK_COMMAND_BS))
+    else if (tok.is_any_of(TokenRetval::TK_COMMAND_AT, TokenRetval::TK_COMMAND_BS))
     {
       QCString cmdName=parser->context.token->name;
       AUTO_TRACE_ADD("command={}",cmdName);
@@ -3245,28 +3252,29 @@ Token DocParamList::parse(const QCString &cmdName)
   auto ns = AutoNodeStack(parser(),thisVariant());
   DocPara *par=nullptr;
   QCString saveCmdName = cmdName;
+  DocParserContext &context = parser()->context;
+  DocTokenizer &tokenizer = parser()->tokenizer;
 
-  Token tok=parser()->tokenizer.lex();
+  Token tok=tokenizer.lex();
   if (!tok.is(TokenRetval::TK_WHITESPACE))
   {
-    warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"expected whitespace after \\{} command",
+    warn_doc_error(context.fileName,tokenizer.getLineNr(),"expected whitespace after \\{} command",
         saveCmdName);
     retval = Token::make_RetVal_EndParBlock();
     goto endparamlist;
   }
-  parser()->tokenizer.setStateParam();
-  tok=parser()->tokenizer.lex();
+  tokenizer.setStateParam();
+  tok=tokenizer.lex();
   while (tok.is(TokenRetval::TK_WORD)) /* there is a parameter name */
   {
     if (m_type==DocParamSect::Param)
     {
-      int typeSeparator = parser()->context.token->name.find('#'); // explicit type position
+      int typeSeparator = context.token->name.find('#'); // explicit type position
       if (typeSeparator!=-1)
       {
-        parser()->handleParameterType(thisVariant(),m_paramTypes,parser()->context.token->name.left(typeSeparator));
-        parser()->context.token->name = parser()->context.token->name.mid(typeSeparator+1);
-        parser()->context.hasParamCommand=TRUE;
-        parser()->checkArgumentName();
+        parser()->handleParameterType(thisVariant(),m_paramTypes,context.token->name.left(typeSeparator));
+        context.token->name = context.token->name.mid(typeSeparator+1);
+        context.hasParamCommand=TRUE;
         if (parent() && std::holds_alternative<DocParamSect>(*parent()))
         {
           std::get<DocParamSect>(*parent()).m_hasTypeSpecifier=true;
@@ -3274,24 +3282,24 @@ Token DocParamList::parse(const QCString &cmdName)
       }
       else
       {
-        parser()->context.hasParamCommand=TRUE;
-        parser()->checkArgumentName();
+        context.hasParamCommand=TRUE;
       }
+      parser()->checkArgumentName();
     }
     else if (m_type==DocParamSect::RetVal)
     {
-      parser()->context.hasReturnCommand=TRUE;
+      context.hasReturnCommand=TRUE;
       parser()->checkRetvalName();
     }
-    parser()->context.inSeeBlock=true;
+    context.inSeeBlock=true;
     parser()->handleLinkedWord(thisVariant(),m_params,true);
-    parser()->context.inSeeBlock=false;
-    tok=parser()->tokenizer.lex();
+    context.inSeeBlock=false;
+    tok=tokenizer.lex();
   }
-  parser()->tokenizer.setStatePara();
+  tokenizer.setStatePara();
   if (tok.is_any_of(TokenRetval::TK_NONE,TokenRetval::TK_EOF)) // premature end of comment
   {
-    warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"unexpected end of comment block while parsing the "
+    warn_doc_error(context.fileName,tokenizer.getLineNr(),"unexpected end of comment block while parsing the "
         "argument of command {}",saveCmdName);
     retval = Token::make_RetVal_EndParBlock();
     goto endparamlist;
@@ -3300,7 +3308,7 @@ Token DocParamList::parse(const QCString &cmdName)
   {
     if (!tok.is(TokenRetval::TK_NEWPARA)) /* empty param description */
     {
-      warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"unexpected token {} in comment block while parsing the "
+      warn_doc_error(context.fileName,tokenizer.getLineNr(),"unexpected token {} in comment block while parsing the "
           "argument of command {}",tok.to_string(),saveCmdName);
     }
     retval = Token::make_RetVal_EndParBlock();
@@ -3952,42 +3960,6 @@ void DocPara::handleLink(const QCString &cmdName,bool isJavaLink)
   {
     children().append<DocWord>(parser(),thisVariant(),leftOver);
   }
-}
-
-void DocPara::handleRef(char cmdChar,const QCString &cmdName)
-{
-  AUTO_TRACE("cmdName={}",cmdName);
-  QCString saveCmdName = cmdName;
-  Token tok=parser()->tokenizer.lex();
-  if (!tok.is(TokenRetval::TK_WHITESPACE))
-  {
-    warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"expected whitespace after '{:c}{}' command",
-      cmdChar,qPrint(saveCmdName));
-    return;
-  }
-  // RAII helper to set and restore state
-  class AutoRestoreState
-  {
-    public:
-      AutoRestoreState(DocParser *parser) : m_parser(parser) { m_parser->tokenizer.setStateRef(); }
-     ~AutoRestoreState() { m_parser->tokenizer.setStatePara(); }
-    private:
-      DocParser *m_parser;
-  };
-  AutoRestoreState rs(parser());
-  tok=parser()->tokenizer.lex(); // get the reference id
-  if (!tok.is(TokenRetval::TK_WORD))
-  {
-    warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"unexpected token {} as the argument of '{:c}{}'",
-        tok.to_string(),cmdChar,saveCmdName);
-    return;
-  }
-  {
-    children().append<DocRef>(parser(),thisVariant(),
-                              parser()->context.token->name,
-                              parser()->context.context);
-  }
-  children().get_last<DocRef>()->parse(cmdChar,cmdName);
 }
 
 void DocPara::handleInclude(const QCString &cmdName,DocInclude::Type t)
@@ -4740,6 +4712,7 @@ Token DocPara::handleCommand(char cmdChar, const QCString &cmdName)
       break;
     case CommandType::CMD_PARAM:
       retval = handleParamSection(cmdName,DocParamSect::Param,FALSE,parser()->context.token->paramDir);
+      parser()->context.paramPosition++;
       break;
     case CommandType::CMD_TPARAM:
       retval = handleParamSection(cmdName,DocParamSect::TemplateParam,FALSE,parser()->context.token->paramDir);
@@ -4887,7 +4860,7 @@ Token DocPara::handleCommand(char cmdChar, const QCString &cmdName)
     case CommandType::CMD_REF:
       // fall through
     case CommandType::CMD_SUBPAGE:
-      handleRef(cmdChar,cmdName);
+      parser()->handleRef(thisVariant(),children(),cmdChar,cmdName);
       break;
     case CommandType::CMD_SECREFLIST:
       {
@@ -5584,7 +5557,7 @@ Token DocPara::handleHtmlEndTag(const QCString &tagName)
       warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"Unexpected tag </caption> found");
       break;
     case HtmlTagType::HTML_BR:
-      warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"Illegal </br> tag found");
+      //warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"Illegal </br> tag found");
       break;
     case HtmlTagType::HTML_H1:
       warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"Unexpected tag </h1> found");
@@ -5607,7 +5580,7 @@ Token DocPara::handleHtmlEndTag(const QCString &tagName)
     case HtmlTagType::HTML_IMG:
       break;
     case HtmlTagType::HTML_HR:
-      warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"Illegal </hr> tag found");
+      // warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"Illegal </hr> tag found");
       break;
     case HtmlTagType::HTML_A:
       //warn_doc_error(parser()->context.fileName,parser()->tokenizer.getLineNr(),"Unexpected tag </a> found");

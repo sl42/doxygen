@@ -329,6 +329,8 @@ static QCString substituteHtmlKeywords(const QCString &file,
 
   QCString projectName = Config_getString(PROJECT_NAME);
   bool treeView = Config_getBool(GENERATE_TREEVIEW);
+  bool dynamicSections = Config_getBool(HTML_DYNAMIC_SECTIONS);
+  bool codeFolding = Config_getBool(HTML_CODE_FOLDING);
   bool searchEngine = Config_getBool(SEARCHENGINE);
   bool serverBasedSearch = Config_getBool(SERVER_BASED_SEARCH);
   bool mathJax = Config_getBool(USE_MATHJAX);
@@ -417,7 +419,7 @@ static QCString substituteHtmlKeywords(const QCString &file,
       if (disableIndex || !Config_getBool(HTML_DYNAMIC_MENUS) || Config_getBool(FULL_SIDEBAR))
       {
         searchCssJs += "<script type=\"text/javascript\">\n"
-				        "  $(function() { init_search(); });\n"
+				        "document.addEventListener('DOMContentLoaded', init_search);\n"
 					"</script>";
       }
     }
@@ -426,9 +428,9 @@ static QCString substituteHtmlKeywords(const QCString &file,
       if (disableIndex || !Config_getBool(HTML_DYNAMIC_MENUS))
       {
         searchCssJs += "<script type=\"text/javascript\">\n"
-					"  $(function() {\n"
-					"    if ($('.searchresults').length > 0) { searchBox.DOMSearchField().focus(); }\n"
-					"  });\n"
+					"document.addEventListener('DOMContentLoaded', () => {\n"
+					"  if (document.querySelector('.searchresults')) { searchBox.DOMSearchField().focus(); }\n"
+					"});\n"
 					"</script>\n";
       }
 
@@ -646,6 +648,8 @@ static QCString substituteHtmlKeywords(const QCString &file,
     { "PROJECT_LOGO",      hasProjectLogo   },
     { "PROJECT_ICON",      hasProjectIcon   },
     { "COPY_CLIPBOARD",    hasCopyClipboard },
+    { "HTML_CODE_FOLDING", codeFolding      },
+    { "HTML_DYNAMIC_SECTIONS", dynamicSections},
   },htmlMarkerInfo);
 
   result = removeEmptyLines(result);
@@ -1287,7 +1291,6 @@ void HtmlGenerator::init()
   }
 
 
-  mgr.copyResource("jquery.js",dname);
   if (Config_getBool(INTERACTIVE_SVG))
   {
     mgr.copyResource("svg.min.js",dname);
@@ -1335,6 +1338,7 @@ void HtmlGenerator::init()
     }
   }
 
+  if (Config_getBool(HTML_DYNAMIC_SECTIONS))
   {
     std::ofstream f = Portable::openOutputStream(dname+"/dynsections.js");
     if (f.is_open())
@@ -1345,6 +1349,15 @@ void HtmlGenerator::init()
       {
         t << replaceVariables(mgr.getAsString("dynsections_tooltips.js"));
       }
+    }
+  }
+  if (Config_getBool(HTML_CODE_FOLDING))
+  {
+    std::ofstream f = Portable::openOutputStream(dname+"/codefolding.js");
+    if (f.is_open())
+    {
+      TextStream t(&f);
+      t << replaceVariables(mgr.getAsString("codefolding.js"));
     }
   }
 }
@@ -1574,14 +1587,14 @@ void HtmlGenerator::startFile(const QCString &name,bool isSource,const QCString 
   if (searchEngine /*&& !generateTreeView*/)
   {
     m_t << "<script type=\"text/javascript\">\n";
-    m_t << "var searchBox = new SearchBox(\"searchBox\", \""
+    m_t << "let searchBox = new SearchBox(\"searchBox\", \""
         << m_relPath<< "search/\",'" << Doxygen::htmlFileExtension << "');\n";
     m_t << "</script>\n";
   }
   if (Config_getBool(HTML_CODE_FOLDING))
   {
     m_t << "<script type=\"text/javascript\">\n";
-    m_t << "$(function() { codefold.init(); });\n";
+    m_t << "document.addEventListener('DOMContentLoaded', codefold.init);\n";
     m_t << "</script>\n";
   }
   m_sectionCount=0;
@@ -1724,10 +1737,16 @@ void HtmlGenerator::writeStyleInfo(int part)
       }
     }
 
-    Doxygen::indexList->addStyleSheetFile("jquery.js");
     Doxygen::indexList->addStyleSheetFile("navtree.css");
 
-    Doxygen::indexList->addStyleSheetFile("dynsections.js");
+    if (Config_getBool(HTML_DYNAMIC_SECTIONS))
+    {
+      Doxygen::indexList->addStyleSheetFile("dynsections.js");
+    }
+    if (Config_getBool(HTML_CODE_FOLDING))
+    {
+      Doxygen::indexList->addStyleSheetFile("codefolding.js");
+    }
 
     if (Config_getEnum(HTML_COLORSTYLE)==HTML_COLORSTYLE_t::TOGGLE)
     {
@@ -2145,6 +2164,7 @@ void HtmlGenerator::endMemberList()
 void HtmlGenerator::startMemberItem(const QCString &anchor,MemberItemType type,const QCString &inheritId)
 {
   DBG_HTML(m_t << "<!-- startMemberItem() -->\n")
+  bool dynamicSections = Config_getBool(HTML_DYNAMIC_SECTIONS);
   if (m_emptySection)
   {
     m_t << "<table class=\"memberdecls\">\n";
@@ -2153,7 +2173,8 @@ void HtmlGenerator::startMemberItem(const QCString &anchor,MemberItemType type,c
   m_t << "<tr class=\"memitem:" << convertToId(anchor);
   if (!inheritId.isEmpty())
   {
-    m_t << " inherit " << inheritId;
+    if (dynamicSections) m_t << " inherit";
+    m_t << " " << inheritId;
   }
   m_t << "\"";
   if (!anchor.isEmpty())
@@ -2179,11 +2200,13 @@ void HtmlGenerator::startMemberTemplateParams()
 
 void HtmlGenerator::endMemberTemplateParams(const QCString &anchor,const QCString &inheritId)
 {
+  bool dynamicSections = Config_getBool(HTML_DYNAMIC_SECTIONS);
   m_t << "</td></tr>\n";
   m_t << "<tr class=\"memitem:" << convertToId(anchor);
   if (!inheritId.isEmpty())
   {
-    m_t << " inherit " << inheritId;
+    if (dynamicSections) m_t << " inherit";
+    m_t << " " << inheritId;
   }
   m_t << " template\"><td class=\"memItemLeft\">";
 }
@@ -2219,6 +2242,7 @@ void HtmlGenerator::insertMemberAlignLeft(MemberItemType type, bool initTag)
 void HtmlGenerator::startMemberDescription(const QCString &anchor,const QCString &inheritId, bool typ)
 {
   DBG_HTML(m_t << "<!-- startMemberDescription -->\n")
+  bool dynamicSections = Config_getBool(HTML_DYNAMIC_SECTIONS);
   if (m_emptySection)
   {
     m_t << "<table class=\"memberdecls\">\n";
@@ -2227,7 +2251,8 @@ void HtmlGenerator::startMemberDescription(const QCString &anchor,const QCString
   m_t << "<tr class=\"memdesc:" << anchor;
   if (!inheritId.isEmpty())
   {
-    m_t << " inherit " << inheritId;
+    if (dynamicSections) m_t << " inherit";
+    m_t << " " << inheritId;
   }
   m_t << "\">";
   m_t << "<td class=\"mdescLeft\">&#160;</td>";
@@ -2628,7 +2653,7 @@ void HtmlGenerator::startMemberGroupHeader(const QCString &id,bool)
   m_t << "<tr id=\"" << id << "\" class=\"groupHeader\"><td colspan=\"2\"><div class=\"groupHeader\">";
 }
 
-void HtmlGenerator::endMemberGroupHeader()
+void HtmlGenerator::endMemberGroupHeader(bool)
 {
   m_t << "</div></td></tr>\n";
 }
@@ -3037,33 +3062,45 @@ static void writeDefaultQuickLinks(TextStream &t,
     t << "<script type=\"text/javascript\" src=\"" << relPath << "menudata.js\"></script>\n";
     t << "<script type=\"text/javascript\" src=\"" << relPath << "menu.js\"></script>\n";
     t << "<script type=\"text/javascript\">\n";
-    t << "$(function() {\n";
-    t << "  initMenu('" << relPath << "',"
-      << (searchEngine && !(generateTreeView && fullSidebar)?"true":"false") << ","
-      << (serverBasedSearch?"true":"false") << ",'"
-      << searchPage << "','"
-      << theTranslator->trSearch() << "',"
-      << (generateTreeView?"true":"false")
-      << ");\n";
+    t << "document.addEventListener('DOMContentLoaded', () => {\n";
+    t << "  initMenu('" << relPath << "'," << (generateTreeView?"true":"false") << ");\n";
     if (searchEngine)
     {
       if (!serverBasedSearch)
       {
         if (!disableIndex && dynamicMenus && !fullSidebar)
         {
-          t << "  $(function() { init_search(); });\n";
+          t << "  init_search();\n";
         }
       }
       else
       {
-        t << "  $(function() {\n"
-          << "    if ($('.searchresults').length > 0) { searchBox.DOMSearchField().focus(); }\n";
-        t << "  });\n";
+          t << "  if (document.querySelector('.searchresults')) { searchBox.DOMSearchField().focus(); }\n";
       }
     }
     t << "});\n";
     t << "</script>\n";
-    t << "<div id=\"main-nav\"></div>\n";
+    t << "<div id=\"main-nav-mobile\">\n";
+    if (searchEngine && !fullSidebar)
+    {
+      t <<   "<div class=\"sm sm-dox\"><input id=\"main-menu-state\" type=\"checkbox\"/>\n";
+      t <<     "<label class=\"main-menu-btn\" for=\"main-menu-state\">\n";
+      t <<     "<span class=\"main-menu-btn-icon\"></span> Toggle main menu visibility</label>\n";
+      t <<     "<span id=\"searchBoxPos1\" style=\"position:absolute;right:8px;top:8px;height:36px;\">";
+      t <<     "</span>\n";
+      t <<   "</div>\n";
+    }
+    t << "</div><!-- main-nav-mobile -->\n";
+    t << "<div id=\"main-nav\">\n";
+    t << "  <ul class=\"sm sm-dox\" id=\"main-menu\">\n";
+    t << "    <li id=\"searchBoxPos2\" style=\"float:right\">\n";
+    if (searchEngine && !(generateTreeView && fullSidebar))
+    {
+      t << getSearchBox(serverBasedSearch,relPath,false);
+    }
+    t << "    </li>\n";
+    t << "  </ul>\n";
+    t << "</div><!-- main-nav -->\n";
   }
   else if (!disableIndex) // && !Config_getBool(HTML_DYNAMIC_MENUS)
   {
@@ -3139,7 +3176,7 @@ QCString HtmlGenerator::writeSplitBarAsString(const QCString &name,const QCStrin
      "  </div>\n"
      "</div>\n"
      "<script type=\"text/javascript\">\n"
-     "$(function(){initNavTree('" + fn + "','" + relpath + "','" + allMembersFile + "'); });\n"
+     "document.addEventListener('DOMContentLoaded',() => { initNavTree('" + fn + "','" + relpath + "','" + allMembersFile + "'); });\n"
      "</script>\n";
      if (Config_getBool(DISABLE_INDEX) || !Config_getBool(FULL_SIDEBAR))
      {
@@ -3236,7 +3273,7 @@ void HtmlGenerator::writeSearchPage()
     t << "<!-- " << theTranslator->trGeneratedBy() << " Doxygen "
       << getDoxygenVersion() << " -->\n";
     t << "<script type=\"text/javascript\">\n";
-    t << "var searchBox = new SearchBox(\"searchBox\", \""
+    t << "let searchBox = new SearchBox(\"searchBox\", \""
       << "search/\",'" << Doxygen::htmlFileExtension << "');\n";
     t << "</script>\n";
 
@@ -3301,7 +3338,7 @@ void HtmlGenerator::writeExternalSearchPage()
     t << "<!-- " << theTranslator->trGeneratedBy() << " Doxygen "
       << getDoxygenVersion() << " -->\n";
     t << "<script type=\"text/javascript\">\n";
-    t << "var searchBox = new SearchBox(\"searchBox\", \""
+    t << "let searchBox = new SearchBox(\"searchBox\", \""
       << "search/\",'" << Doxygen::htmlFileExtension << "');\n";
     t << "</script>\n";
 
@@ -3345,12 +3382,12 @@ void HtmlGenerator::writeExternalSearchPage()
   if (f.is_open())
   {
     TextStream t(&f);
-    t << "var searchResultsText=["
+    t << "const searchResultsText=["
       << "\"" << theTranslator->trSearchResults(0) << "\","
       << "\"" << theTranslator->trSearchResults(1) << "\","
       << "\"" << theTranslator->trSearchResults(2) << "\"];\n";
-    t << "var serverUrl=\"" << Config_getString(SEARCHENGINE_URL) << "\";\n";
-    t << "var tagMap = {\n";
+    t << "const serverUrl=\"" << Config_getString(SEARCHENGINE_URL) << "\";\n";
+    t << "const tagMap = {\n";
     bool first=TRUE;
     // add search mappings
     const StringVector &extraSearchMappings = Config_getList(EXTRA_SEARCH_MAPPINGS);
@@ -3374,13 +3411,13 @@ void HtmlGenerator::writeExternalSearchPage()
     t << "};\n\n";
     t << ResourceMgr::instance().getAsString("extsearch.js");
     t << "\n";
-    t << "$(function() {\n";
-    t << "  var query = trim(getURLParameter('query'));\n";
+    t << "document.addEventListener('DOMContentLoaded',() => {\n";
+    t << "  const query = trim(getURLParameter('query'));\n";
     t << "  if (query) {\n";
     t << "    searchFor(query,0,20);\n";
     t << "  } else {\n";
-    t << "    var results = $('#results');\n";
-    t << "    results.html('<p>" << theTranslator->trSearchResults(0) << "</p>');\n";
+    t << "    const results = document.getElementById('results');\n";
+    t << "    results.innerHtml = '<p>" << theTranslator->trSearchResults(0) << "</p>';\n";
     t << "  }\n";
     t << "});\n";
   }
@@ -3605,6 +3642,7 @@ void HtmlGenerator::writeInheritedSectionTitle(
                   const QCString &title, const QCString &name)
 {
   DBG_HTML(m_t << "<!-- writeInheritedSectionTitle -->\n";)
+  bool dynamicSections = Config_getBool(HTML_DYNAMIC_SECTIONS);
   QCString a = anchor;
   if (!a.isEmpty()) a.prepend("#");
   QCString classLink = QCString("<a class=\"el\" ");
@@ -3623,10 +3661,17 @@ void HtmlGenerator::writeInheritedSectionTitle(
   addHtmlExtensionIfMissing(fn);
   classLink=classLink+fn+a;
   classLink+=QCString("\">")+convertToHtml(name,FALSE)+"</a>";
-  m_t << "<tr class=\"inherit_header " << id << "\">"
-    << "<td colspan=\"2\" onclick=\"javascript:dynsection.toggleInherit('" << id << "')\">"
-    << "<span class=\"dynarrow\"><span class=\"arrowhead closed\"></span></span>"
-    << theTranslator->trInheritedFrom(convertToHtml(title,FALSE),classLink)
+  m_t << "<tr class=\"inherit_header " << id << "\">";
+  if (dynamicSections) 
+  {
+    m_t << "<td colspan=\"2\" onclick=\"javascript:dynsection.toggleInherit('" << id << "')\">";
+    m_t << "<span class=\"dynarrow\"><span class=\"arrowhead closed\"></span></span>";
+  }
+  else
+  {
+    m_t << "<td colspan=\"2\">";
+  }
+  m_t << theTranslator->trInheritedFrom(convertToHtml(title,FALSE),classLink)
     << "</td></tr>\n";
 }
 

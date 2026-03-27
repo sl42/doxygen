@@ -44,7 +44,6 @@
 #include "fileinfo.h"
 #include "utf8.h"
 #include "datetime.h"
-#include "portable.h"
 #include "outputlist.h"
 #include "moduledef.h"
 
@@ -1926,8 +1925,11 @@ void LatexGenerator::endMemberList()
 
 void LatexGenerator::startMemberGroupHeader(const QCString &,bool hasHeader)
 {
-  if (hasHeader) m_t << "\\begin{Indent}";
-  m_t << "\\textbf{ ";
+  if (hasHeader)
+  {
+    m_t << "\\begin{Indent}";
+    m_t << "\\textbf{ ";
+  }
   // changed back to rev 756 due to bug 660501
   //if (Config_getBool(COMPACT_LATEX))
   //{
@@ -1939,10 +1941,10 @@ void LatexGenerator::startMemberGroupHeader(const QCString &,bool hasHeader)
   //}
 }
 
-void LatexGenerator::endMemberGroupHeader()
+void LatexGenerator::endMemberGroupHeader(bool hasHeader)
 {
   // changed back to rev 756 due to bug 660501
-  m_t << "}\\par\n";
+  if (hasHeader) m_t << "}\\par\n";
   //m_t << "}\n";
 }
 
