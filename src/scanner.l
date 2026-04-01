@@ -8540,7 +8540,7 @@ static void handleCommentBlock(yyscan_t yyscanner,const QCString &doc,bool brief
 {
   struct yyguts_t *yyg = (struct yyguts_t*)yyscanner;
   AUTO_TRACE("doc='{}' is_brief={}",Trace::trunc(doc),brief);
-  std::shared_ptr<Entry> &toFill = (differentEntryToFill ? *differentEntryToFill : yyextra->current);
+  std::shared_ptr<Entry> &toFill = ((differentEntryToFill && differentEntryToFill->get()) ? *differentEntryToFill : yyextra->current);
   bool hideInBodyDocs = Config_getBool(HIDE_IN_BODY_DOCS);
   if (yyextra->docBlockInBody && hideInBodyDocs) return;
   int lineNr = brief ? toFill->briefLine : toFill->docLine;   // line of block start
