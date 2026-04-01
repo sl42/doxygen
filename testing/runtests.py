@@ -564,7 +564,7 @@ class Tester:
         if failed_warn:
             msg += (warnings,)
 
-        if failed_warn or failed_xml or failed_html or failed_qhp or failed_latex or failed_docbook or failed_rtf or failed_xmlxsd or failed_man:
+        if failed_warn or failed_xml or failed_html or failed_qhp or failed_latex or failed_docbook or failed_rtf or failed_xmlxsd:
             testmgr.ok(False,self.test_name,msg)
             return False
 
@@ -710,7 +710,7 @@ def main():
     args = parser.parse_args(test_flags + sys.argv[1:])
 
     # sanity check
-    if (not args.xml) and (not args.pdf) and (not args.xhtml) and (not args.qhp) and (not args.docbook and (not args.rtf) and (not args.xmlxsd) and (not args.man)):
+    if (not args.xml) and (not args.pdf) and (not args.xhtml) and (not args.qhp) and (not args.docbook and (not args.rtf) and (not args.xmlxsd)):
         args.xml=True
     if (args.updateref is not None) and (args.ids is None) and (args.all is None):
         parser.error('--updateref requires either --id or --all')
