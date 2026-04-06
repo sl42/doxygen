@@ -25,6 +25,7 @@
 #include "debug.h"
 #include "dir.h"
 #include "indexlist.h"
+#include "threadpool.h"
 
 static std::mutex g_mermaidMutex;
 static int        g_mermaidIndex = 1;
@@ -43,8 +44,9 @@ QCString MermaidManager::imageExtension(OutputFormat format)
 {
   switch (format)
   {
-    case MERM_BITMAP: return ".png";
-    case MERM_SVG:    return ".svg";
+    case OutputFormat::Bitmap: return ".png";
+    case OutputFormat::SVG:    return ".svg";
+    case OutputFormat::PDF:    return ".pdf";
   }
   return ".png";
 }
@@ -91,12 +93,7 @@ QCString MermaidManager::writeMermaidSource(const QCString &outDirArg, const QCS
   file.close();
 
   // Store for batch processing in run()
-  MermaidContent mc(baseName, content, outDir, srcFile, srcLine);
-  switch (format)
-  {
-    case MERM_BITMAP: m_pngContent.push_back(mc); break;
-    case MERM_SVG:    m_svgContent.push_back(mc); break;
-  }
+  m_diagrams.emplace_back(format,MermaidDiagramInfo(baseName, content, outDir, srcFile, srcLine));
 
   return baseName;
 }
@@ -114,15 +111,12 @@ void MermaidManager::generateMermaidOutput(const QCString &baseName, const QCStr
   Doxygen::indexList->addImageFile(imgName);
 }
 
-static void runMermaidContent(const MermaidManager::ContentList &contentList,
-                              MermaidManager::OutputFormat format)
+static void runMermaid(const MermaidManager::DiagramList &diagrams)
 {
-  if (contentList.empty()) return;
+  //printf("runMermaidContent for %zu images\n",contentList.size());
+  if (diagrams.empty()) return;
 
-  QCString mermaidPath = Config_getString(MERMAID_PATH);
-  if (mermaidPath.isEmpty()) return;
-
-  QCString mmdc = mermaidPath;
+  QCString mmdc = Config_getString(MERMAID_PATH);
   if (!mmdc.isEmpty() && mmdc.at(mmdc.length()-1) != '/' && mmdc.at(mmdc.length()-1) != '\\')
   {
     mmdc += "/";
@@ -131,31 +125,48 @@ static void runMermaidContent(const MermaidManager::ContentList &contentList,
 
   QCString mermaidConfigFile = Config_getString(MERMAID_CONFIG_FILE);
 
-  QCString ext;
-  switch (format)
+  struct MermaidCmd
   {
-    case MermaidManager::MERM_BITMAP: ext = "png"; break;
-    case MermaidManager::MERM_SVG:    ext = "svg"; break;
-  }
+    MermaidCmd(const QCString &mmdc_,const QCString &args_,const QCString &ext_,const QCString &srcFile_,int srcLine_) :
+      mmdc(mmdc_), args(args_), ext(ext_), srcFile(srcFile_), srcLine(srcLine_) {}
+    QCString mmdc;
+    QCString args;
+    QCString ext;
+    QCString srcFile;
+    int srcLine;
+  };
+  std::vector<MermaidCmd> mermaidCmds;
 
-  for (const auto &mc : contentList)
+  for (const auto &diagram : diagrams)
   {
-    if (mc.content.isEmpty()) continue;
+    //printf("content=%s\n",qPrint(mc.content));
+    if (diagram.info.content.isEmpty()) continue;
 
-    QCString inputFile  = mc.baseName + ".mmd";
-    QCString outputFile = mc.baseName + "." + ext;
+    QCString ext;
+    switch (diagram.format)
+    {
+      case MermaidManager::OutputFormat::Bitmap: ext = "png"; break;
+      case MermaidManager::OutputFormat::SVG:    ext = "svg"; break;
+      case MermaidManager::OutputFormat::PDF:    ext = "pdf"; break;
+    }
+
+    QCString inputFile  = diagram.info.baseName + ".mmd";
+    QCString outputFile = diagram.info.baseName + "." + ext;
 
     // Check if content has changed since last run (caching)
     FileInfo fi(outputFile.str());
     if (fi.exists())
     {
       QCString cachedContent = fileToString(inputFile);
-      if (cachedContent == mc.content) continue;
+      if (cachedContent == diagram.info.content)
+      {
+        continue;
+      }
     }
 
     // Build the mmdc command arguments
     QCString args;
-    args += "-i \"" + inputFile + "\" ";
+    args += "-q -i \"" + inputFile + "\" ";
     args += "-o \"" + outputFile + "\" ";
 
     if (!mermaidConfigFile.isEmpty())
@@ -163,15 +174,59 @@ static void runMermaidContent(const MermaidManager::ContentList &contentList,
       args += "-c \"" + mermaidConfigFile + "\" ";
     }
 
-    msg("Generating Mermaid {} file {}\n", ext, outputFile);
-    Debug::print(Debug::Mermaid, 0, "*** MermaidManager::run Running: {} {}\n", mmdc, args);
+    mermaidCmds.emplace_back(mmdc, args,ext, diagram.info.srcFile, diagram.info.srcLine);
+  }
 
-    int exitCode = Portable::system(mmdc.data(), args.data(), TRUE);
-    if (exitCode != 0)
+  std::size_t numThreads = static_cast<std::size_t>(Config_getInt(DOT_NUM_THREADS));
+  size_t offset=0;
+  size_t total=mermaidCmds.size();
+  msg("Generating {} Mermaid files using {} threads\n", total, numThreads);
+  if (numThreads>1) // multi threaded version
+  {
+    ThreadPool threadPool(numThreads);
+    std::vector< std::future<int> > results;
+
+    // queue the work
+    for (const auto &cmd : mermaidCmds)
     {
-      err_full(mc.srcFile, mc.srcLine,
-               "Problems running Mermaid (mmdc). Verify that the command '{}' works from the command line. Exit code: {}.",
-               mmdc, exitCode);
+      auto processFile = [&cmd]()
+      {
+        Debug::print(Debug::Mermaid, 0, "*** MermaidManager::run Running: {} {}\n", cmd.mmdc, cmd.args);
+        int exitCode = Portable::system(cmd.mmdc.data(), cmd.args.data(), TRUE);
+        if (exitCode != 0)
+        {
+          err_full(cmd.srcFile, cmd.srcLine,
+              "Problems running Mermaid (mmdc). Verify that the command '{} {}' works from the command line. Exit code: {}.",
+              cmd.mmdc, cmd.args, exitCode);
+        }
+        return exitCode;
+      };
+      results.emplace_back(threadPool.queue(processFile));
+    }
+
+    // wait for the results
+    for (auto &f : results)
+    {
+      offset++;
+      msg("Generating Mermaid file {}/{}\n", offset, total);
+      f.get();
+    }
+  }
+  else // single threaded version
+  {
+    for (const auto &cmd : mermaidCmds)
+    {
+      offset++;
+      msg("Generating Mermaid file {}/{}\n", offset, total);
+      Debug::print(Debug::Mermaid, 0, "*** MermaidManager::run Running: {} {}\n", cmd.mmdc, cmd.args);
+
+      int exitCode = Portable::system(cmd.mmdc.data(), cmd.args.data(), TRUE);
+      if (exitCode != 0)
+      {
+        err_full(cmd.srcFile, cmd.srcLine,
+            "Problems running Mermaid (mmdc). Verify that the command '{} {}' works from the command line. Exit code: {}.",
+            cmd.mmdc, cmd.args, exitCode);
+      }
     }
   }
 }
@@ -179,6 +234,5 @@ static void runMermaidContent(const MermaidManager::ContentList &contentList,
 void MermaidManager::run()
 {
   Debug::print(Debug::Mermaid, 0, "*** MermaidManager::run\n");
-  runMermaidContent(m_pngContent, MERM_BITMAP);
-  runMermaidContent(m_svgContent, MERM_SVG);
+  runMermaid(m_diagrams);
 }

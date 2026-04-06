@@ -402,10 +402,11 @@ void RTFDocVisitor::operator()(const DocVerbatim &s)
       }
       break;
     case DocVerbatim::Mermaid:
+      if (Config_getBool(MERMAID_RENDER_MODE)!=MERMAID_RENDER_MODE_t::CLIENT_SIDE)
       {
         QCString rtfOutput = Config_getString(RTF_OUTPUT);
         QCString baseName = MermaidManager::instance().writeMermaidSource(
-                       rtfOutput,s.exampleFile(),s.text(),MermaidManager::MERM_BITMAP,
+                       rtfOutput,s.exampleFile(),s.text(),MermaidManager::OutputFormat::Bitmap,
                        s.srcFile(),s.srcLine());
         writeMermaidFile(baseName, s.hasCaption());
         visitChildren(s);
@@ -1334,12 +1335,13 @@ void RTFDocVisitor::operator()(const DocPlantUmlFile &df)
 void RTFDocVisitor::operator()(const DocMermaidFile &df)
 {
   DBG_RTF("{\\comment RTFDocVisitor::operator()(const DocMermaidFile &)}\n");
+  if (Config_getBool(MERMAID_RENDER_MODE)==MERMAID_RENDER_MODE_t::CLIENT_SIDE) return;
   if (!Config_getBool(DOT_CLEANUP)) copyFile(df.file(),Config_getString(RTF_OUTPUT)+"/"+stripPath(df.file()));
   QCString rtfOutput = Config_getString(RTF_OUTPUT);
   std::string inBuf;
   readInputFile(df.file(),inBuf);
   QCString baseName = MermaidManager::instance().writeMermaidSource(
-                       rtfOutput,QCString(),inBuf,MermaidManager::MERM_BITMAP,
+                       rtfOutput,QCString(),inBuf,MermaidManager::OutputFormat::Bitmap,
                        df.srcFile(),df.srcLine());
   writeMermaidFile(baseName, df.hasCaption());
   visitChildren(df);
@@ -1796,8 +1798,9 @@ void RTFDocVisitor::writePlantUMLFile(const QCString &fileName, bool hasCaption)
 
 void RTFDocVisitor::writeMermaidFile(const QCString &fileName, bool hasCaption)
 {
+  if (Config_getBool(MERMAID_RENDER_MODE)==MERMAID_RENDER_MODE_t::CLIENT_SIDE) return;
   QCString baseName=makeBaseName(fileName,".mmd");
   QCString outDir = Config_getString(RTF_OUTPUT);
-  MermaidManager::instance().generateMermaidOutput(fileName,outDir,MermaidManager::MERM_BITMAP);
+  MermaidManager::instance().generateMermaidOutput(fileName,outDir,MermaidManager::OutputFormat::Bitmap);
   includePicturePreRTF(baseName + ".png", true, hasCaption);
 }

@@ -23,10 +23,10 @@
 #include "containers.h"
 #include "qcstring.h"
 
-struct MermaidContent
+struct MermaidDiagramInfo
 {
-  MermaidContent(const QCString &baseName_, const QCString &content_,
-                 const QCString &outDir_, const QCString &srcFile_, int srcLine_)
+  MermaidDiagramInfo(const QCString &baseName_, const QCString &content_,
+                     const QCString &outDir_, const QCString &srcFile_, int srcLine_)
      : baseName(baseName_), content(content_), outDir(outDir_),
        srcFile(srcFile_), srcLine(srcLine_) {}
   QCString baseName;
@@ -41,7 +41,7 @@ class MermaidManager
 {
   public:
     /** Mermaid output image formats */
-    enum OutputFormat { MERM_BITMAP, MERM_SVG };
+    enum class OutputFormat { Bitmap, SVG, PDF };
 
     static MermaidManager &instance();
 
@@ -68,15 +68,20 @@ class MermaidManager
      */
     void generateMermaidOutput(const QCString &baseName, const QCString &outDir, OutputFormat format);
 
-    using ContentList = std::vector<MermaidContent>;
+    struct MermaidDiagram
+    {
+      MermaidDiagram(OutputFormat fmt, MermaidDiagramInfo &&inf) : format(fmt), info(std::move(inf)) {}
+      OutputFormat format;
+      MermaidDiagramInfo info;
+    };
+    using DiagramList = std::vector<MermaidDiagram>;
 
   private:
     MermaidManager();
 
     static QCString imageExtension(OutputFormat format);
 
-    ContentList m_pngContent;
-    ContentList m_svgContent;
+    DiagramList m_diagrams;
 };
 
 #endif
