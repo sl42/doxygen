@@ -1,8 +1,6 @@
 /******************************************************************************
  *
- *
- *
- * Copyright (C) 1997-2015 by Dimitri van Heesch.
+ * Copyright (C) 1997-2026 by Dimitri van Heesch.
  *
  * Permission to use, copy, modify, and distribute this software and its
  * documentation under the terms of the GNU General Public License is hereby
@@ -15,17 +13,26 @@
  *
  */
 
-#ifndef DIA_H
-#define DIA_H
+#ifndef DOTJOB_H
+#define DOTJOB_H
 
-class QCString;
+#include <vector>
+#include "qcstring.h"
 
-enum class DiaOutputFormat { BITMAP , EPS };
+struct DotJob
+{
+  DotJob(const QCString &ap, const QCString &rdn, const QCString &f, const QCString &m,
+      const QCString &s, size_t sz, bool genMap = false)
+    : absPath(ap), relDotName(rdn), format(f), md5Hash(m), srcFile(s), size(sz), generateImageMap(genMap) {}
+  QCString absPath;
+  QCString relDotName;
+  QCString format;
+  QCString md5Hash;
+  QCString srcFile;
+  size_t size;
+  bool generateImageMap;
+};
 
+using DotJobs = std::vector<DotJob>;
 
-void writeDiaGraphFromFile(const QCString &inFile,const QCString &outDir,
-                           const QCString &outFile,DiaOutputFormat format,
-                           const QCString &srcFile,int srcLine,bool toIndex);
-
-#endif
-
+#endif // DOTJOB_H

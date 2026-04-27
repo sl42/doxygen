@@ -402,9 +402,11 @@ DB_VIS_C
     case DocVerbatim::Mermaid:
       if (Config_getBool(MERMAID_RENDER_MODE)!=MERMAID_RENDER_MODE_t::CLIENT_SIDE)
       {
-        QCString docbookOutput = Config_getString(DOCBOOK_OUTPUT);
-        QCString baseName = MermaidManager::instance().writeMermaidSource(docbookOutput,
-            s.exampleFile(),s.text(),MermaidManager::OutputFormat::Bitmap,
+        auto docbookOutput = Config_getString(DOCBOOK_OUTPUT);
+        auto outputFormat  = MermaidManager::OutputFormat::Docbook;
+        auto imageFormat   = MermaidManager::convertToImageFormat(outputFormat);
+        auto baseName      = MermaidManager::instance().writeMermaidSource(docbookOutput,
+            s.exampleFile(),s.text(),imageFormat,
             s.srcFile(),s.srcLine());
         m_t << "<para>\n";
         writeMermaidFile(baseName,s);
@@ -1560,7 +1562,7 @@ void DocbookDocVisitor::writeMscFile(const QCString &fileName, const DocVerbatim
 DB_VIS_C
   QCString shortName = makeBaseName(fileName,".msc");
   QCString outDir = Config_getString(DOCBOOK_OUTPUT);
-  if (newFile) writeMscGraphFromFile(fileName,outDir,shortName,MscOutputFormat::BITMAP,s.srcFile(),s.srcLine());
+  if (newFile) writeMscGraphFromFile(fileName,outDir,shortName,MscOutputFormat::BITMAP,s.srcFile(),s.srcLine(),false);
   visitPreStart(m_t, s.children(), s.hasCaption(), s.relPath() + shortName + ".png", s.width(), s.height());
   visitCaption(s.children());
   visitPostEnd(m_t, s.hasCaption());
@@ -1571,7 +1573,7 @@ void DocbookDocVisitor::writePlantUMLFile(const QCString &baseName, const DocVer
 DB_VIS_C
   QCString shortName = stripPath(baseName);
   QCString outDir = Config_getString(DOCBOOK_OUTPUT);
-  PlantumlManager::instance().generatePlantUMLOutput(baseName,outDir,PlantumlManager::PUML_BITMAP);
+  PlantumlManager::instance().generatePlantUMLOutput(baseName,outDir,PlantumlManager::PUML_BITMAP,false);
   visitPreStart(m_t, s.children(), s.hasCaption(), s.relPath() + shortName + ".png", s.width(),s.height());
   visitCaption(s.children());
   visitPostEnd(m_t, s.hasCaption());
@@ -1597,7 +1599,7 @@ DB_VIS_C
   for (const auto &bName: baseNameVector)
   {
     QCString baseName=makeBaseName(bName,".pu");
-    PlantumlManager::instance().generatePlantUMLOutput(baseName,outDir,PlantumlManager::PUML_BITMAP);
+    PlantumlManager::instance().generatePlantUMLOutput(baseName,outDir,PlantumlManager::PUML_BITMAP,false);
     if (!first) endPlantUmlFile(hasCaption);
     first = false;
     m_t << "<para>\n";
@@ -1618,10 +1620,13 @@ void DocbookDocVisitor::writeMermaidFile(const QCString &baseName, const DocVerb
 {
 DB_VIS_C
   if (Config_getBool(MERMAID_RENDER_MODE)==MERMAID_RENDER_MODE_t::CLIENT_SIDE) return;
-  QCString shortName = stripPath(baseName);
-  QCString outDir = Config_getString(DOCBOOK_OUTPUT);
-  MermaidManager::instance().generateMermaidOutput(baseName,outDir,MermaidManager::OutputFormat::Bitmap);
-  visitPreStart(m_t, s.children(), s.hasCaption(), s.relPath() + shortName + ".png", s.width(),s.height());
+  auto shortName    = stripPath(baseName);
+  auto outDir       = Config_getString(DOCBOOK_OUTPUT);
+  auto outputFormat = MermaidManager::OutputFormat::Docbook;
+  auto imageFormat  = MermaidManager::convertToImageFormat(outputFormat);
+  auto imgExt       = MermaidManager::imageExtension(imageFormat);
+  MermaidManager::instance().generateMermaidOutput(baseName,outDir,imageFormat,false);
+  visitPreStart(m_t, s.children(), s.hasCaption(), s.relPath() + shortName + "." + imgExt, s.width(),s.height());
   visitCaption(s.children());
   visitPostEnd(m_t, s.hasCaption());
 }
@@ -1641,12 +1646,14 @@ DB_VIS_C
   QCString outDir = Config_getString(DOCBOOK_OUTPUT);
   std::string inBuf;
   readInputFile(fileName,inBuf);
-  QCString baseName = MermaidManager::instance().writeMermaidSource(outDir,
-                           QCString(),inBuf,MermaidManager::OutputFormat::Bitmap,srcFile,srcLine);
-  QCString shortName = stripPath(baseName);
-  MermaidManager::instance().generateMermaidOutput(baseName,outDir,MermaidManager::OutputFormat::Bitmap);
+  auto outputFormat = MermaidManager::OutputFormat::Docbook;
+  auto imageFormat  = MermaidManager::convertToImageFormat(outputFormat);
+  auto imgExt       = MermaidManager::imageExtension(imageFormat);
+  auto baseName     = MermaidManager::instance().writeMermaidSource(outDir,QCString(),inBuf,imageFormat,srcFile,srcLine);
+  auto shortName    = stripPath(baseName);
+  MermaidManager::instance().generateMermaidOutput(baseName,outDir,imageFormat,false);
   m_t << "<para>\n";
-  visitPreStart(m_t, children, hasCaption, relPath + shortName + ".png", width, height);
+  visitPreStart(m_t, children, hasCaption, relPath + shortName + "." + imgExt, width, height);
 }
 
 void DocbookDocVisitor::endMermaidFile(bool hasCaption)
@@ -1672,7 +1679,7 @@ DB_VIS_C
   QCString baseName=makeBaseName(fileName,".msc");
   baseName.prepend("msc_");
   QCString outDir = Config_getString(DOCBOOK_OUTPUT);
-  if (newFile) writeMscGraphFromFile(fileName,outDir,baseName,MscOutputFormat::BITMAP,srcFile,srcLine);
+  if (newFile) writeMscGraphFromFile(fileName,outDir,baseName,MscOutputFormat::BITMAP,srcFile,srcLine,false);
   m_t << "<para>\n";
   visitPreStart(m_t, children, hasCaption, relPath + baseName + ".png",  width,  height);
 }
@@ -1690,7 +1697,7 @@ void DocbookDocVisitor::writeDiaFile(const QCString &baseName, const DocVerbatim
 DB_VIS_C
   QCString shortName = stripPath(baseName);
   QCString outDir = Config_getString(DOCBOOK_OUTPUT);
-  writeDiaGraphFromFile(baseName+".dia",outDir,shortName,DiaOutputFormat::BITMAP,s.srcFile(),s.srcLine());
+  writeDiaGraphFromFile(baseName+".dia",outDir,shortName,DiaOutputFormat::BITMAP,s.srcFile(),s.srcLine(),false);
   visitPreStart(m_t, s.children(), s.hasCaption(), shortName, s.width(),s.height());
   visitCaption(s.children());
   visitPostEnd(m_t, s.hasCaption());
@@ -1710,7 +1717,7 @@ DB_VIS_C
   QCString baseName=makeBaseName(fileName,".dia");
   baseName.prepend("dia_");
   QCString outDir = Config_getString(DOCBOOK_OUTPUT);
-  if (newFile) writeDiaGraphFromFile(fileName,outDir,baseName,DiaOutputFormat::BITMAP,srcFile,srcLine);
+  if (newFile) writeDiaGraphFromFile(fileName,outDir,baseName,DiaOutputFormat::BITMAP,srcFile,srcLine,false);
   m_t << "<para>\n";
   visitPreStart(m_t, children, hasCaption, relPath + baseName + ".png",  width,  height);
 }
@@ -1728,7 +1735,7 @@ void DocbookDocVisitor::writeDotFile(const QCString &fileName, const DocVerbatim
 DB_VIS_C
   QCString shortName = makeBaseName(fileName,".dot");
   QCString outDir = Config_getString(DOCBOOK_OUTPUT);
-  if (newFile) writeDotGraphFromFile(fileName,outDir,shortName,GraphOutputFormat::BITMAP,s.srcFile(),s.srcLine());
+  if (newFile) writeDotGraphFromFile(fileName,outDir,shortName,GraphOutputFormat::BITMAP,s.srcFile(),s.srcLine(),false);
   visitPreStart(m_t, s.children(), s.hasCaption(), s.relPath() + shortName + "." + getDotImageExtension(), s.width(),s.height());
   visitCaption(s.children());
   visitPostEnd(m_t, s.hasCaption());
@@ -1749,7 +1756,7 @@ DB_VIS_C
   baseName.prepend("dot_");
   QCString outDir = Config_getString(DOCBOOK_OUTPUT);
   QCString imgExt = getDotImageExtension();
-  if (newFile) writeDotGraphFromFile(fileName,outDir,baseName,GraphOutputFormat::BITMAP,srcFile,srcLine);
+  if (newFile) writeDotGraphFromFile(fileName,outDir,baseName,GraphOutputFormat::BITMAP,srcFile,srcLine,false);
   m_t << "<para>\n";
   visitPreStart(m_t, children, hasCaption, relPath + baseName + "." + imgExt,  width,  height);
 }

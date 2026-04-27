@@ -15,6 +15,13 @@
 
 #include <cassert>
 #include <cmath>
+#include <map>
+#include <set>
+#include <string>
+#include <algorithm>
+#include <numeric>
+#include <random>
+#include "threadpool.h"
 
 #ifdef _MSC_VER
 #pragma warning( push )
@@ -52,8 +59,6 @@
 #include "config.h"
 #include "dir.h"
 #include "doxygen.h"
-
-#include <sstream>
 
 // the graphicx LaTeX has a limitation of maximum size of 16384
 // To be on the save side we take it a little bit smaller i.e. 150 inch * 72 dpi
@@ -103,7 +108,7 @@ static bool resetPDFSize(const int width,const int height, const QCString &base)
   Dir thisDir;
   if (!thisDir.rename(patchFile.str(),tmpName.str()))
   {
-    err("dotrunner resetPDFSize(): Failed to rename file {} to {}!\n",qPrint(patchFile),qPrint(tmpName));
+    err("Failed to rename file {} to {}!\n",patchFile,tmpName);
     return FALSE;
   }
   std::ifstream fi = Portable::openInputStream(tmpName);
@@ -258,167 +263,263 @@ bool DotRunner::readBoundingBox(const QCString &fileName,int *width,int *height,
 
 //---------------------------------------------------------------------------------
 
-DotRunner::DotRunner(const QCString& absDotName, const QCString& md5Hash)
-  : m_file(absDotName)
-  , m_md5Hash(md5Hash)
-  , m_dotExe(Doxygen::verifiedDotPath)
-  , m_cleanUp(Config_getBool(DOT_CLEANUP))
-{
-}
-
-
-void DotRunner::addJob(const QCString &format, const QCString &output,
-                      const QCString &srcFile,int srcLine)
-{
-
-  for (auto& s: m_jobs)
-  {
-    if (s.format != format) continue;
-    if (s.output != output) continue;
-    // we have this job already
-    return;
-  }
-  auto args = QCString("-T") + format + " -o \"" + output + "\"";
-  m_jobs.emplace_back(format, output, args, srcFile, srcLine);
-}
-
-QCString getBaseNameOfOutput(const QCString &output)
+static QCString getBaseNameOfOutput(const QCString &output)
 {
   int index = output.findRev('.');
   if (index < 0) return output;
   return output.left(index);
 }
 
-bool DotRunner::run()
+DotRunner::DotRunner()
+  : m_dotExe(Doxygen::verifiedDotPath)
 {
-  int exitCode = 0;
-
-  QCString dotArgs;
-  QCString srcFile;
-  int srcLine = -1;
-
-  try
-  {
-  // create output
-  if (Config_getBool(DOT_MULTI_TARGETS))
-  {
-    dotArgs = QCString("\"") + m_file + "\"";
-    for (auto& s : m_jobs)
-    {
-      dotArgs += ' ';
-      dotArgs += s.args;
-    }
-    if (!m_jobs.empty())
-    {
-      srcFile = m_jobs.front().srcFile;
-      srcLine = m_jobs.front().srcLine;
-    }
-    if ((exitCode = Portable::system(m_dotExe, dotArgs, FALSE)) != 0)
-      throw std::runtime_error("DOT_MULTI_TARGETS system call failed");
-  }
-  else
-  {
-    size_t jobNdx = 0;
-    for (auto& s : m_jobs)
-    {
-      srcFile = s.srcFile;
-      srcLine = s.srcLine;
-      dotArgs = QCString("\"") + m_file + "\" " + s.args;
-      if ((exitCode = Portable::system(m_dotExe, dotArgs, FALSE)) != 0)
-      {
-        std::ostringstream excMsg;
-        excMsg << "single target system call failed (ndx " << jobNdx
-               << " / " << m_jobs.size() << ")";
-        err_full(srcFile, srcLine, "Problems running dot: reason '{}'; code={}, command='{}', arguments='{}'",
-          excMsg.str(), exitCode, m_dotExe, dotArgs);
-      }
-      ++jobNdx;
-    }
-  }
-
-  // check output
-  // As there should be only one pdf file be generated, we don't need code for regenerating multiple pdf files in one call
-  size_t jobNdx = 0;
-  for (auto& s : m_jobs)
-  {
-    try
-    {
-    if (s.format.startsWith("pdf"))
-    {
-      int width = 0, height = 0;
-      if (!readBoundingBox(s.output, &width, &height, FALSE))
-      {
-        std::ostringstream excMsg;
-        excMsg << "readBoundingBox failed (ndx " << jobNdx
-               << " / " << m_jobs.size() << ", width " << width
-               << ", height " << height << srcFile << ", line " << srcLine << ")";
-        throw std::runtime_error(excMsg.str());
-      }
-      if ((width > MAX_LATEX_GRAPH_SIZE) || (height > MAX_LATEX_GRAPH_SIZE))
-      {
-        if (!resetPDFSize(width, height, getBaseNameOfOutput(s.output)))
-        {
-          std::ostringstream excMsg;
-          excMsg << "resetPDFSize failed (ndx " << jobNdx
-                 << " / " << m_jobs.size() << ", width " << width
-                 << ", height " << height
-                 << ", s_output_data: '" << s.output << "')";
-          throw std::runtime_error(excMsg.str());
-        }
-        dotArgs = QCString("\"") + m_file + "\" " + s.args;
-        if ((exitCode = Portable::system(m_dotExe, dotArgs, FALSE)) != 0)
-          throw std::runtime_error("DOT_MULTI_TARGETS system call failed");
-      }
-
-      if (s.format.startsWith("png"))
-      {
-        checkPngResult(s.output);
-      }
-    }
-    }
-    catch (std::exception& exc)
-    {
-      err_full(srcFile, srcLine, "Problems running dot: reason '{}'; code={}, command='{}', arguments='{}'",
-        exc.what(), exitCode, m_dotExe.data(), dotArgs.data());
-    }
-    catch (...)
-    {
-      err_full(srcFile, srcLine, "Problems running dot: unknown exception; code={}, command='{}', arguments='{}'",
-        exitCode, m_dotExe.data(), dotArgs.data());
-    }
-    ++jobNdx;
-  }
-
-  // remove .dot files
-  if (m_cleanUp)
-  {
-    //printf("removing dot file %s\n",qPrint(m_file));
-    Portable::unlink(m_file);
-  }
-  
-  // create checksum file
-  if (!m_md5Hash.isEmpty())
-  {
-    QCString md5Name = getBaseNameOfOutput(m_file) + ".md5";
-    FILE* f = Portable::fopen(md5Name, "w");
-    if (f)
-    {
-      fwrite(m_md5Hash.data(), 1, 32, f);
-      fclose(f);
-    }
-  }
-  }
-  catch (std::exception& exc)
-  {
-   err_full(srcFile,srcLine,"Problems running dot: reason '{}'; exit code={}, command='{}', arguments='{}'",
-     exc.what(), exitCode,qPrint(m_dotExe),qPrint(dotArgs));
-  }
-  catch (...)
-  {
-    err_full(srcFile,srcLine,"Problems running dot: unknown exception; code={}, command='{}', arguments='{}'",
-      exitCode,qPrint(m_dotExe),qPrint(dotArgs));
-  }
-  return TRUE;
 }
 
+bool DotRunner::run(const DotJobs &dotJobs)
+{
+  if (dotJobs.empty()) return TRUE;
 
+  // Group jobs by format, then by directory so we can cd once per group
+  std::map<std::string, std::map<std::string, std::vector<const DotJob*>>> byFormatAndDir;
+  for (const auto &job : dotJobs)
+  {
+    byFormatAndDir[job.format.str()][job.absPath.str()].push_back(&job);
+  }
+
+  std::mt19937 rng(std::random_device{}());
+  bool ok = true;
+  size_t prev=0;
+  for (const auto &[fmtStr, byDir] : byFormatAndDir)
+  {
+    QCString format = QCString(fmtStr);
+
+    for (const auto &[dirStr, jobs] : byDir)
+    {
+      std::string oldDir = Dir::currentDirPath();
+      Dir::setCurrent(dirStr);
+
+      // settings controlling how to distribute the graphs over threads and batches
+      const size_t numThreads = static_cast<size_t>(Config_getInt(DOT_NUM_THREADS));
+      const size_t batchSize  = static_cast<size_t>(Config_getInt(DOT_BATCH_SIZE));
+      const size_t exeLen     = m_dotExe.length() + 1; // "exe " prefix
+      const size_t maxArgLen  = 32000-exeLen; // Windows CreateProcess limit is 32767; keep safe margin
+
+      // create a pseudo random ordering in which to process the dot files
+      std::vector<size_t> indices(jobs.size());
+      std::iota(indices.begin(), indices.end(), 0);
+      std::shuffle(indices.begin(), indices.end(), rng);
+
+      // helper to keep track of dot command to run later
+      struct CommandArgument
+      {
+        CommandArgument(const QCString &args) : arguments(args) {}
+        QCString arguments;
+        size_t numDotFiles = 0;
+        const DotJob *firstJob = nullptr;
+      };
+
+      std::vector<CommandArgument> partialCommands;
+      std::vector<CommandArgument> finalCommands;
+
+      bool hasImageMap = std::any_of(jobs.begin(),jobs.end(),[](const auto &j) { return j->generateImageMap; });
+
+      // each dot command has a command arguments of the form: -Tformat -O basename1.dot basename2.dot ...
+      QCString baseArgs = QCString("-T") + format;
+      if (hasImageMap) // if any image needs a map we generate one for all images
+      {
+        baseArgs += " -Tcmapx";
+      }
+      baseArgs += " -O";
+
+      // prepare partial commands for each thread (command is later skipped if numDotFiles==0).
+      for (size_t i=0; i<numThreads; i++)
+      {
+        partialCommands.emplace_back(baseArgs);
+      }
+
+      // split the jobs into batches per thread iterating in pseudo random order to fill each batch with a random selection of graphs
+      size_t index=0;
+      for (size_t i : indices)
+      {
+        const auto &job = jobs[i];
+        QCString fileArg = QCString(" ") + job->relDotName;
+        auto &cmd = partialCommands[index];
+        if (cmd.numDotFiles<batchSize && cmd.arguments.length()+fileArg.length()<maxArgLen) // still room in this batch
+        {
+          cmd.arguments+=fileArg;
+          cmd.numDotFiles++;
+        }
+        else // this batch is full, move to finished commands and start a new one
+        {
+          finalCommands.push_back(cmd);
+          cmd.arguments=baseArgs+fileArg;
+          cmd.numDotFiles=1;
+        }
+        if (cmd.firstJob==nullptr) cmd.firstJob=job;
+        index = (index+1)%numThreads;
+      }
+
+      // append partial commands to the final commands
+      finalCommands.insert(finalCommands.end(),partialCommands.begin(),partialCommands.end());
+
+      // now run the finalCommands.
+      if (Config_getInt(DOT_NUM_THREADS)<=1) // no threads to work with
+      {
+        for (const auto &cmd : finalCommands)
+        {
+          if (cmd.numDotFiles>0) // check if there are graphs to generate first
+          {
+            if (cmd.numDotFiles>1) // batch mode
+            {
+              msg("Running dot for graphs {}-{}/{}\n",prev+1,prev+cmd.numDotFiles,dotJobs.size());
+            }
+            else // single graph mode
+            {
+              msg("Running dot for graph {}/{}\n",prev+1,dotJobs.size());
+            }
+            prev+=cmd.numDotFiles;
+            int exitCode;
+            if ((exitCode = Portable::system(m_dotExe, cmd.arguments, FALSE)) != 0)
+            {
+              err_full(cmd.firstJob->srcFile, 1,
+                  "Problems running dot: exit code={}, command='{}', dir='{}', arguments='{}'",
+                  exitCode, m_dotExe, dirStr, cmd.arguments);
+              ok = false;
+            }
+          }
+        }
+      }
+      else // use multiple threads to run instances of dot in parallel
+      {
+        ThreadPool workers(numThreads);
+        std::vector< std::future<size_t> > results;
+        for (auto & cmd: finalCommands)
+        {
+          if (cmd.numDotFiles>0)
+          {
+            auto process = [this,cmd,dirStr]() -> size_t
+            {
+              int exitCode;
+              if ((exitCode = Portable::system(m_dotExe, cmd.arguments, FALSE)) != 0)
+              {
+                err_full(cmd.firstJob->srcFile, 1,
+                    "Problems running dot: exit code={}, command='{}', dir='{}', arguments='{}'",
+                    exitCode, m_dotExe, dirStr, cmd.arguments);
+              }
+              return cmd.numDotFiles;
+            };
+            results.emplace_back(workers.queue(process));
+          }
+        }
+        for (auto &f : results)
+        {
+          size_t numDotFiles = f.get();
+          if (numDotFiles>1) // batch mode
+          {
+            msg("Finished running dot for graphs {}-{}/{}\n",prev+1,prev+numDotFiles,dotJobs.size());
+          }
+          else // single graph mode
+          {
+            msg("Finished running dot for graph {}/{}\n",prev+1,dotJobs.size());
+          }
+          prev+=numDotFiles;
+        }
+      }
+
+      // Post-process each output file. dot -O appends the format suffix to the
+      // full input filename, so the output is absPath + relDotName + "." + format.
+      // Rename to remove the .dot infix, producing absPath + baseName + "." + format.
+      for (const auto *job : jobs)
+      {
+        QCString base   = job->absPath + getBaseNameOfOutput(job->relDotName);
+        QCString dotOutput = job->absPath + job->relDotName + "." + format;
+        QCString output = base + "." + format;
+        Dir d;
+        if (!d.rename(dotOutput.str(), output.str()))
+        {
+          err("Failed to rename {} to {}!\n", dotOutput, output);
+          ok = false;
+          continue;
+        }
+        if (job->generateImageMap)
+        {
+          QCString dotMapOutput = job->absPath + job->relDotName + ".cmapx";
+          QCString mapOutput = base + ".map";
+          if (!d.rename(dotMapOutput.str(), mapOutput.str()))
+          {
+            err("Failed to rename {} to {}!\n", dotMapOutput, mapOutput);
+            ok = false;
+            continue;
+          }
+        }
+
+        if (format.startsWith("pdf"))
+        {
+          int width=0, height=0;
+          if (!readBoundingBox(output, &width, &height, FALSE))
+          {
+            ok = false;
+            continue;
+          }
+          if ((width > MAX_LATEX_GRAPH_SIZE) || (height > MAX_LATEX_GRAPH_SIZE))
+          {
+            if (!resetPDFSize(width, height, base))
+            {
+              ok = false;
+              continue;
+            }
+            // Re-run dot for just this one file
+            QCString rerunArgs = QCString("-T") + format + " -O \"" + job->relDotName + "\"";
+            int exitCode;
+            if ((exitCode = Portable::system(m_dotExe, rerunArgs, FALSE)) != 0)
+            {
+              err_full(job->srcFile, 1,
+                       "Problems running dot: exit code={}, command='{}', dir='{}', arguments='{}'",
+                       exitCode, m_dotExe, dirStr, rerunArgs);
+              ok = false;
+            }
+            else
+            {
+              Dir d2;
+              if (!d2.rename(dotOutput.str(), output.str()))
+              {
+                err("Failed to rename {} to {}!\n", dotOutput, output);
+                ok = false;
+              }
+            }
+          }
+        }
+        else if (format.startsWith("png"))
+        {
+          checkPngResult(output);
+        }
+      }
+      Dir::setCurrent(oldDir);
+    }
+  }
+
+  // Write .md5 files and clean up .dot files (once per unique dotFile)
+  std::set<std::string> processed;
+  for (const auto &job : dotJobs)
+  {
+    if (!processed.insert((job.absPath + job.relDotName).str()).second) continue;
+
+    if (!job.md5Hash.isEmpty())
+    {
+      QCString md5Name = job.absPath + getBaseNameOfOutput(job.relDotName) + ".md5";
+      FILE *f = Portable::fopen(md5Name, "w");
+      if (f)
+      {
+        fwrite(job.md5Hash.data(), 1, 32, f);
+        fclose(f);
+      }
+    }
+
+    if (Config_getBool(DOT_CLEANUP))
+    {
+      Portable::unlink(job.absPath + job.relDotName);
+    }
+  }
+
+  return ok;
+}

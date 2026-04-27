@@ -1837,7 +1837,17 @@ static QCString extractCanonicalType(const Definition *d,const FileDef *fs,QCStr
     // foreach identifier in the type
   {
     //printf("     i=%d p=%d\n",i,p);
-    if (i>pp) canType += type.mid(pp,i-pp);
+    if (i>pp)
+    {
+      if (i-pp>=2 && type[i-2]==':' && type[i-1]==':') // skip over leading ::, see issue #12021
+      {
+        canType += type.mid(pp,i-pp-2);
+      }
+      else
+      {
+        canType += type.mid(pp,i-pp);
+      }
+    }
 
     QCString ct = getCanonicalTypeForIdentifier(d,fs,word,lang,&templSpec);
 
@@ -4230,7 +4240,7 @@ void addMembersToMemberGroup(MemberList *ml,
  */
 int extractClassNameFromType(const QCString &type,int &pos,QCString &name,QCString &templSpec,SrcLangExt lang)
 {
-  AUTO_TRACE("type='{}' name='{}' lang={}",type,name,lang);
+  AUTO_TRACE("type='{}' pos={} name='{}' lang={}",type,pos,name,lang);
   static const reg::Ex re_norm(R"(\a[\w:]*)");
   static const reg::Ex re_fortran(R"(\a[\w:()=]*)");
   const reg::Ex *re = &re_norm;
@@ -5809,28 +5819,6 @@ QCString externalRef(const QCString &relPath,const QCString &ref,bool href)
     result = relPath;
   }
   return result;
-}
-
-/** Writes the intensity only bitmap represented by \a data as an image to
- *  directory \a dir using the colors defined by HTML_COLORSTYLE_*.
- */
-void writeColoredImgData(const QCString &dir,ColoredImgDataItem data[])
-{
-  int hue   = Config_getInt(HTML_COLORSTYLE_HUE);
-  int sat   = Config_getInt(HTML_COLORSTYLE_SAT);
-  int gamma = Config_getInt(HTML_COLORSTYLE_GAMMA);
-  while (data->name)
-  {
-    QCString fileName = dir+"/"+data->name;
-    ColoredImage img(data->width,data->height,data->content,data->alpha,
-                     sat,hue,gamma);
-    if (!img.save(fileName))
-    {
-      fprintf(stderr,"Warning: Cannot open file %s for writing\n",data->name);
-    }
-    Doxygen::indexList->addImageFile(data->name);
-    data++;
-  }
 }
 
 /** Replaces any markers of the form \#\#AA in input string \a str

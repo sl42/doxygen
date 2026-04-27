@@ -41,7 +41,8 @@ class MermaidManager
 {
   public:
     /** Mermaid output image formats */
-    enum class OutputFormat { Bitmap, SVG, PDF };
+    enum class OutputFormat { HTML, LaTeX, RTF, Docbook };
+    enum class ImageFormat { PNG, SVG, PDF };
 
     static MermaidManager &instance();
 
@@ -58,28 +59,30 @@ class MermaidManager
      *  @returns The base name of the generated file (without extension).
      */
     QCString writeMermaidSource(const QCString &outDirArg, const QCString &fileName,
-                                const QCString &content, OutputFormat format,
+                                const QCString &content, ImageFormat format,
                                 const QCString &srcFile, int srcLine);
 
     /** Register a generated Mermaid image with the index.
      *  @param[in] baseName the name of the generated file (as returned by writeMermaidSource())
      *  @param[in] outDir   the directory containing the resulting image.
      *  @param[in] format   the image format that was generated.
+     *  @param[in] toIndex  add the file to the index lists for htmlhelp / qhc etc.
      */
-    void generateMermaidOutput(const QCString &baseName, const QCString &outDir, OutputFormat format);
+    void generateMermaidOutput(const QCString &baseName, const QCString &outDir, ImageFormat format, bool toIndex);
 
     struct MermaidDiagram
     {
-      MermaidDiagram(OutputFormat fmt, MermaidDiagramInfo &&inf) : format(fmt), info(std::move(inf)) {}
-      OutputFormat format;
+      MermaidDiagram(ImageFormat fmt, MermaidDiagramInfo &&inf) : imageFormat(fmt), info(std::move(inf)) {}
+      ImageFormat imageFormat;
       MermaidDiagramInfo info;
     };
     using DiagramList = std::vector<MermaidDiagram>;
 
+    static QCString imageExtension(ImageFormat imageFormat);
+    static ImageFormat convertToImageFormat(OutputFormat outputFormat);
+
   private:
     MermaidManager();
-
-    static QCString imageExtension(OutputFormat format);
 
     DiagramList m_diagrams;
 };

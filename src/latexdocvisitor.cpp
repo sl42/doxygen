@@ -501,11 +501,11 @@ void LatexDocVisitor::operator()(const DocVerbatim &s)
     case DocVerbatim::Mermaid:
       if (Config_getBool(MERMAID_RENDER_MODE)!=MERMAID_RENDER_MODE_t::CLIENT_SIDE)
       {
-        QCString latexOutput = Config_getString(LATEX_OUTPUT);
-        bool usePDFLatex = Config_getBool(USE_PDFLATEX);
+        auto latexOutput  = Config_getString(LATEX_OUTPUT);
+        auto outputFormat = MermaidManager::OutputFormat::LaTeX;
+        auto imageFormat  = MermaidManager::convertToImageFormat(outputFormat);
         QCString baseName = MermaidManager::instance().writeMermaidSource(
-                              latexOutput,s.exampleFile(),s.text(),
-                              usePDFLatex ? MermaidManager::OutputFormat::PDF : MermaidManager::OutputFormat::Bitmap,
+                              latexOutput,s.exampleFile(),s.text(),imageFormat,
                               s.srcFile(),s.srcLine());
         writeMermaidFile(baseName, s);
       }
@@ -1944,7 +1944,7 @@ void LatexDocVisitor::startDotFile(const QCString &fileName,
   QCString baseName=makeBaseName(fileName,".dot");
   baseName.prepend("dot_");
   QCString outDir = Config_getString(LATEX_OUTPUT);
-  if (newFile) writeDotGraphFromFile(fileName,outDir,baseName,GraphOutputFormat::EPS,srcFile,srcLine);
+  if (newFile) writeDotGraphFromFile(fileName,outDir,baseName,GraphOutputFormat::EPS,srcFile,srcLine,false);
   visitPreStart(m_t,hasCaption, baseName, width, height);
 }
 
@@ -1966,7 +1966,7 @@ void LatexDocVisitor::startMscFile(const QCString &fileName,
   baseName.prepend("msc_");
 
   QCString outDir = Config_getString(LATEX_OUTPUT);
-  if (newFile) writeMscGraphFromFile(fileName,outDir,baseName,MscOutputFormat::EPS,srcFile,srcLine);
+  if (newFile) writeMscGraphFromFile(fileName,outDir,baseName,MscOutputFormat::EPS,srcFile,srcLine,false);
   visitPreStart(m_t,hasCaption, baseName, width, height);
 }
 
@@ -1981,7 +1981,7 @@ void LatexDocVisitor::writeMscFile(const QCString &fileName, const DocVerbatim &
 {
   QCString shortName=makeBaseName(fileName,".msc");
   QCString outDir = Config_getString(LATEX_OUTPUT);
-  if (newFile) writeMscGraphFromFile(fileName,outDir,shortName,MscOutputFormat::EPS,s.srcFile(),s.srcLine());
+  if (newFile) writeMscGraphFromFile(fileName,outDir,shortName,MscOutputFormat::EPS,s.srcFile(),s.srcLine(),false);
   visitPreStart(m_t, s.hasCaption(), shortName, s.width(),s.height());
   visitCaption(s.children());
   visitPostEnd(m_t, s.hasCaption());
@@ -1999,7 +1999,7 @@ void LatexDocVisitor::startDiaFile(const QCString &fileName,
   baseName.prepend("dia_");
 
   QCString outDir = Config_getString(LATEX_OUTPUT);
-  if (newFile) writeDiaGraphFromFile(fileName,outDir,baseName,DiaOutputFormat::EPS,srcFile,srcLine);
+  if (newFile) writeDiaGraphFromFile(fileName,outDir,baseName,DiaOutputFormat::EPS,srcFile,srcLine,false);
   visitPreStart(m_t,hasCaption, baseName, width, height);
 }
 
@@ -2018,7 +2018,7 @@ void LatexDocVisitor::writePlantUMLFile(const QCString &baseName, const DocVerba
   }
   QCString outDir = Config_getString(LATEX_OUTPUT);
   PlantumlManager::instance().generatePlantUMLOutput(baseName,outDir,
-                              s.useBitmap() ? PlantumlManager::PUML_BITMAP : PlantumlManager::PUML_EPS);
+                              s.useBitmap() ? PlantumlManager::PUML_BITMAP : PlantumlManager::PUML_EPS,false);
   visitPreStart(m_t, s.hasCaption(), shortName, s.width(), s.height());
   visitCaption(s.children());
   visitPostEnd(m_t, s.hasCaption());
@@ -2051,7 +2051,7 @@ void LatexDocVisitor::startPlantUmlFile(const QCString &fileName,
       if (shortName.find('.')==-1) shortName += ".png";
     }
     PlantumlManager::instance().generatePlantUMLOutput(baseName,outDir,
-                                useBitmap ? PlantumlManager::PUML_BITMAP : PlantumlManager::PUML_EPS);
+                                useBitmap ? PlantumlManager::PUML_BITMAP : PlantumlManager::PUML_EPS,false);
     if (!first) endPlantUmlFile(hasCaption);
     first = false;
     visitPreStart(m_t,hasCaption, shortName, width, height);
@@ -2067,11 +2067,13 @@ void LatexDocVisitor::endPlantUmlFile(bool hasCaption)
 void LatexDocVisitor::writeMermaidFile(const QCString &baseName, const DocVerbatim &s)
 {
   if (Config_getBool(MERMAID_RENDER_MODE)==MERMAID_RENDER_MODE_t::CLIENT_SIDE) return;
-  QCString shortName = stripPath(baseName);
-  bool usePDFLatex = Config_getBool(USE_PDFLATEX);
-  if (shortName.find('.')==-1) shortName += usePDFLatex ? ".pdf" : ".png";
-  QCString outDir = Config_getString(LATEX_OUTPUT);
-  MermaidManager::instance().generateMermaidOutput(baseName,outDir,usePDFLatex ? MermaidManager::OutputFormat::PDF : MermaidManager::OutputFormat::Bitmap);
+  auto shortName    = stripPath(baseName);
+  auto outDir       = Config_getString(LATEX_OUTPUT);
+  auto outputFormat = MermaidManager::OutputFormat::LaTeX;
+  auto imageFormat  = MermaidManager::convertToImageFormat(outputFormat);
+  auto imgExt       = MermaidManager::imageExtension(imageFormat);
+  if (shortName.find('.')==-1) shortName += "." + imgExt;
+  MermaidManager::instance().generateMermaidOutput(baseName,outDir,imageFormat,false);
   visitPreStart(m_t, s.hasCaption(), shortName, s.width(), s.height());
   visitCaption(s.children());
   visitPostEnd(m_t, s.hasCaption());
@@ -2089,15 +2091,15 @@ void LatexDocVisitor::startMermaidFile(const QCString &fileName,
   QCString outDir = Config_getString(LATEX_OUTPUT);
   std::string inBuf;
   readInputFile(fileName,inBuf);
-
-  bool usePDFLatex = Config_getBool(USE_PDFLATEX);
-  QCString baseName = MermaidManager::instance().writeMermaidSource(
-                              outDir,QCString(),inBuf,
-                              usePDFLatex ? MermaidManager::OutputFormat::PDF : MermaidManager::OutputFormat::Bitmap,
+  auto outputFormat = MermaidManager::OutputFormat::LaTeX;
+  auto imageFormat  = MermaidManager::convertToImageFormat(outputFormat);
+  auto imgExt       = MermaidManager::imageExtension(imageFormat);
+  auto baseName     = MermaidManager::instance().writeMermaidSource(
+                              outDir,QCString(),inBuf,imageFormat,
                               srcFile,srcLine);
-  QCString shortName = stripPath(baseName);
-  if (shortName.find('.')==-1) shortName += usePDFLatex ? ".pdf" : ".png";
-  MermaidManager::instance().generateMermaidOutput(baseName,outDir,usePDFLatex ? MermaidManager::OutputFormat::PDF : MermaidManager::OutputFormat::Bitmap);
+  auto shortName    = stripPath(baseName);
+  if (shortName.find('.')==-1) shortName += "." + imgExt;
+  MermaidManager::instance().generateMermaidOutput(baseName,outDir,imageFormat,false);
   visitPreStart(m_t,hasCaption, shortName, width, height);
 }
 
