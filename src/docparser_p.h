@@ -101,8 +101,14 @@ struct DocParserContext
 class DocParser : public IDocParser
 {
   public:
-    void pushContext();
-    void popContext();
+    class AutoSaveContext
+    {
+      public:
+        AutoSaveContext(DocParser &parser) : m_parser(parser) { m_parser.pushContext(); }
+       ~AutoSaveContext() { m_parser.popContext(); }
+      private:
+        DocParser &m_parser;
+    };
     void handleImg(DocNodeVariant *parent,DocNodeList &children,const HtmlAttribList &tagHtmlAttribs);
     Token internalValidatingParseDoc(DocNodeVariant *parent,DocNodeList &children,
                                       const QCString &doc);
@@ -128,7 +134,7 @@ class DocParser : public IDocParser
                           const QCString &tagName,const HtmlAttribList *attribs);
     void handleStyleLeave(DocNodeVariant *parent,DocNodeList &children, DocStyleChange::Style s,
                           const QCString &tagName);
-    void handlePendingStyleCommands(DocNodeVariant *parent,DocNodeList &children);
+    void handlePendingStyleCommands(DocNodeVariant *parent,DocNodeList &children, size_t numberOfElementsToClose = 0);
     void handleInitialStyleCommands(DocNodeVariant *parent,DocNodeList &children);
     Token handleAHref(DocNodeVariant *parent,DocNodeList &children,const HtmlAttribList &tagHtmlAttribs);
     void handleUnclosedStyleCommands();
@@ -136,16 +142,20 @@ class DocParser : public IDocParser
     void handleParameterType(DocNodeVariant *parent,DocNodeList &children,const QCString &paramTypes);
     void handleInternalRef(DocNodeVariant *parent,DocNodeList &children);
     void handleAnchor(DocNodeVariant *parent,DocNodeList &children);
+    void handleCite(DocNodeVariant *parent,DocNodeList &children);
     void handlePrefix(DocNodeVariant *parent,DocNodeList &children);
     void handleImage(DocNodeVariant *parent, DocNodeList &children);
     void handleRef(DocNodeVariant *parent, DocNodeList &children, char cmdChar, const QCString &cmdName);
     void handleIFile(char cmdChar,const QCString &cmdName);
     void handleILine(char cmdChar,const QCString &cmdName);
     void readTextFileByName(const QCString &file,QCString &text);
-
     std::stack< DocParserContext > contextStack;
     DocParserContext               context;
     DocTokenizer                   tokenizer;
+  private:
+    void pushContext();
+    void popContext();
+
 };
 
 //---------------------------------------------------------------------------

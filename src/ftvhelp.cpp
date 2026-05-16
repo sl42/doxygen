@@ -556,7 +556,7 @@ static bool dupOfParent(const FTVNodePtr &n)
 static void generateJSLink(TextStream &t,const FTVNodePtr &n)
 {
   bool nameAsHtml = !n->nameAsHtml.isEmpty();
-  QCString link = nameAsHtml ? n->nameAsHtml : convertToJSString(n->name);
+  QCString link = nameAsHtml ? convertToJSString(n->nameAsHtml,true) : convertToJSString(n->name);
   if (n->file.isEmpty()) // no link
   {
     t << "\"" << link << "\", null, ";
@@ -575,6 +575,8 @@ static QCString convertFileId2Var(const QCString &fileId)
   QCString varId = fileId;
   int i=varId.findRev('/');
   if (i>=0) varId = varId.mid(i+1);
+  if (isdigit(varId[0])) varId.prepend("_");
+
   return substitute(varId,"-","_");
 }
 

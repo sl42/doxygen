@@ -45,6 +45,8 @@
 #include "doxygen.h"
 #include "commentscan.h"
 #include "entry.h"
+#include "commentcnv.h"
+#include "cmdmapper.h"
 #include "config.h"
 #include "message.h"
 #include "portable.h"
@@ -1240,6 +1242,7 @@ int Markdown::Private::processLink(const std::string_view data,size_t offset)
 {
   AUTO_TRACE("data='{}' offset={}",Trace::trunc(data),offset);
   const size_t size = data.size();
+
   QCString content;
   QCString link;
   QCString title;
@@ -1652,6 +1655,7 @@ int Markdown::Private::processLink(const std::string_view data,size_t offset)
     }
     else if ((lp=link.find('#'))!=-1 || link.find('/')!=-1 || link.find('.')!=-1)
     { // file/url link
+      bool isRef = false;
       if (lp==0 || (lp>0 && !isURL(link) && Config_getEnum(MARKDOWN_ID_STYLE)==MARKDOWN_ID_STYLE_t::GITHUB))
       {
         out+="@ref \"";
@@ -1659,6 +1663,7 @@ int Markdown::Private::processLink(const std::string_view data,size_t offset)
         out+="\" \"";
         out+=substitute(content.simplifyWhiteSpace(),"\"","&quot;");
         out+="\"";
+        isRef = true;
       }
       else
       {
@@ -1675,8 +1680,29 @@ int Markdown::Private::processLink(const std::string_view data,size_t offset)
         out+=" ";
         out+=externalLinkTarget();
         out+=">";
-        content = content.simplifyWhiteSpace();
-        processInline(std::string_view(content.str()));
+      }
+
+      content = content.simplifyWhiteSpace();
+      bool foundNameRef = false;
+      if (!content.isEmpty() && (content.at(0)=='#' || content.at(0)=='@'))
+      {
+        size_t endOfId=1;
+        while (endOfId<content.length() && isId(content.at(endOfId))) endOfId++;
+        QCString user = content.mid(1,endOfId-1);
+        if (!user.isEmpty() && (content.at(0)=='#' || (!CommentScanner::isCommand(user) && Mappers::cmdMapper->map(user)==CommandType::UNKNOWN)))
+        {
+          // assume @name or #name instead of command
+          out+='@';
+          out+=content;
+          foundNameRef = true;
+        }
+      }
+      if (!isRef)
+      {
+        if (!foundNameRef)
+        {
+          processInline(std::string_view(content.str()));
+        }
         out+="</a>";
       }
     }
